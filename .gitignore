@@ -1,0 +1,43 @@
+# Build
+build/
+out/
+cmake-build-*/
+*.dir/
+CMakeCache.txt
+CMakeFiles/
+install/
+
+# Dependencias descargadas
+libs/JUCE/
+_deps/
+
+# Assets pesados (se obtienen con scripts/fetch_samples)
+assets/samples/
+
+# Datos locales de usuario
+*.sqlite
+*.sqlite-journal
+settings.json
+sessions/
+
+# Visual Studio / IDE
+.vs/
+.vscode/
+*.vcxproj*
+*.sln
+*.user
+.idea/
+
+# Binarios y artefactos
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.obj
+*.lib
+*.exp
+
+# SO
+Thumbs.db
+Desktop.ini
+.DS_Store
