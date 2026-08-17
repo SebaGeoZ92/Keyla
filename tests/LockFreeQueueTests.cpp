@@ -124,9 +124,15 @@ TEST_CASE ("Un productor y un consumidor de verdad, en hilos distintos", "[lockf
         }
         else if (producerDone.load (std::memory_order_acquire))
         {
-            // El productor terminó: sólo queda drenar lo que haya.
-            if (! queue.pop (out))
-                break;
+            // Cola vacía y productor terminado: no queda nada. El `acquire`
+            // contra el `release` del productor garantiza que todo lo que
+            // empujó es visible aquí, así que un pop fallido después de ver la
+            // bandera significa vacío de verdad.
+            //
+            // La versión anterior hacía un segundo pop aquí y **descartaba** lo
+            // que sacara. Cuando la carrera caía del lado malo se perdía un
+            // elemento y el test fallaba acusando a la cola de desordenar.
+            break;
         }
     }
 

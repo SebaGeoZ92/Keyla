@@ -79,6 +79,23 @@ public:
     /** Con el stream parado. El host no toma posesión. */
     void setInstrument (core::IInstrument* instrument);
 
+    /** Cambia el instrumento **con el stream corriendo**. El puntero nuevo se
+        publica de forma atómica y el callback lo recoge en el siguiente bloque;
+        el anterior se silencia antes. Quien llama es responsable de mantener
+        vivo el objeto viejo hasta que haya pasado un bloque. */
+    void swapInstrument (core::IInstrument* instrument) noexcept;
+
+    // ── Reverberación ───────────────────────────────────────────────────────
+    //
+    // El doc 02 §2 la dejó fuera de la fase 1 a propósito: "añade latencia
+    // percibida y enmascara problemas de sonido". Lo primero no aplica —esta
+    // no tiene retardo de entrada— pero lo segundo sí, así que llega ahora que
+    // el instrumento seco ya se ha juzgado, y no antes.
+
+    /** 0 = seco, 1 = todo reverberación. Se puede llamar mientras suena. */
+    void setReverbMix (float mix) noexcept;
+    float reverbMix() const noexcept { return targetReverbMix.load (std::memory_order_relaxed); }
+
     // ── Entrada MIDI (la llama MidiInputHost, desde el hilo del driver) ─────
 
     /** Empuja un mensaje con el instante en que llegó, medido con el reloj de
@@ -120,10 +137,17 @@ private:
     std::unique_ptr<juce::AudioIODevice> device;
     Settings active;
 
-    core::IInstrument* instrument { nullptr };
+    // Atómico porque la UI puede cambiar de instrumento mientras suena.
+    std::atomic<core::IInstrument*> instrument { nullptr };
+
     core::Transport transport;
     core::KeyboardState keyboard;
     core::Limiter limiter;
+
+    juce::Reverb reverb;
+    juce::AudioBuffer<float> reverbScratch;
+    std::atomic<float> targetReverbMix { 0.0f };
+    float currentReverbMix { 0.0f };
 
     core::LockFreeQueue<IncomingMidi, 1024> midiFifo;
     std::array<core::StampedMidiEvent, maxEventsPerBlock> eventScratch {};

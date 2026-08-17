@@ -42,13 +42,43 @@ namespace
 
 MainComponent::MainComponent()
 {
-    audioHost.setInstrument (&synth);
+    instrument = core::createInstrument (core::InstrumentId::piano);
+    audioHost.setInstrument (instrument.get());
+    audioHost.setReverbMix (core::defaultReverbFor (core::InstrumentId::piano));
 
     // ── Controles ───────────────────────────────────────────────────────────
     addAndMakeVisible (audioDeviceBox);
     addAndMakeVisible (midiDeviceBox);
     addAndMakeVisible (bufferSizeBox);
     addAndMakeVisible (exclusiveToggle);
+    addAndMakeVisible (instrumentBox);
+    addAndMakeVisible (reverbSlider);
+    addAndMakeVisible (reverbLabel);
+
+    for (auto id : { core::InstrumentId::piano, core::InstrumentId::electricPiano,
+                     core::InstrumentId::organ, core::InstrumentId::accordion,
+                     core::InstrumentId::strings, core::InstrumentId::vibraphone })
+        instrumentBox.addItem (core::instrumentName (id), static_cast<int> (id) + 1);
+
+    instrumentBox.setSelectedId (static_cast<int> (core::InstrumentId::piano) + 1,
+                                 juce::dontSendNotification);
+
+    instrumentBox.onChange = [this]
+    {
+        selectInstrument (static_cast<core::InstrumentId> (instrumentBox.getSelectedId() - 1));
+    };
+
+    reverbLabel.setText ("Sala", juce::dontSendNotification);
+    reverbLabel.setFont (juce::FontOptions (13.0f));
+    reverbLabel.setColour (juce::Label::textColourId, juce::Colour { 0xff9aa2ad });
+
+    reverbSlider.setRange (0.0, 1.0, 0.01);
+    reverbSlider.setValue (core::defaultReverbFor (core::InstrumentId::piano),
+                           juce::dontSendNotification);
+    reverbSlider.onValueChange = [this]
+    {
+        audioHost.setReverbMix (static_cast<float> (reverbSlider.getValue()));
+    };
     addAndMakeVisible (keyboardView);
     addAndMakeVisible (nowPlayingView);
     addAndMakeVisible (statusLabel);
@@ -102,8 +132,10 @@ MainComponent::~MainComponent()
 {
     stopTimer();
     midiHost.useDevice ({});
-    audioHost.close();
+    audioHost.close();          // para el stream antes de soltar el instrumento
     audioHost.setInstrument (nullptr);
+    instrument.reset();
+    retiredInstrument.reset();
 }
 
 // ── Dispositivos ────────────────────────────────────────────────────────────
@@ -234,6 +266,24 @@ void MainComponent::sendNote (int note, int velocity, bool on)
     audioHost.pushMidiMessage (on ? makeNoteOn (note, velocity) : makeNoteOff (note));
 }
 
+void MainComponent::selectInstrument (core::InstrumentId id)
+{
+    auto replacement = core::createInstrument (id);
+
+    // El anterior se retira, no se destruye: el hilo de audio puede estar
+    // todavía dentro de su process() cuando aquí se publica el puntero nuevo.
+    // Se libera en el siguiente cambio, que llegará como pronto dentro de un
+    // buen puñado de bloques.
+    retiredInstrument = std::move (instrument);
+    instrument = std::move (replacement);
+
+    audioHost.swapInstrument (instrument.get());
+
+    reverbSlider.setValue (core::defaultReverbFor (id), juce::sendNotificationSync);
+
+    showMessage (core::instrumentName (id), false);
+}
+
 // ── Bucle de UI: polling, nunca notificaciones desde RT (invariante 5) ──────
 
 void MainComponent::timerCallback()
@@ -303,6 +353,11 @@ void MainComponent::resized()
     midiDeviceBox.setBounds (secondRow.removeFromLeft (330));
     secondRow.removeFromLeft (8);
     panicButton.setBounds (secondRow.removeFromLeft (100));
+    secondRow.removeFromLeft (20);
+    instrumentBox.setBounds (secondRow.removeFromLeft (180));
+    secondRow.removeFromLeft (12);
+    reverbLabel.setBounds (secondRow.removeFromLeft (40));
+    reverbSlider.setBounds (secondRow.removeFromLeft (140));
 
     area.removeFromTop (10);
     messageLabel.setBounds (area.removeFromTop (22));

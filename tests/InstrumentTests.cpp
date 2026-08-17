@@ -7,6 +7,7 @@
 // visto sin hardware y sin oídos.
 
 #include <core/audio/Limiter.h>
+#include <core/instrument/Instruments.h>
 #include <core/instrument/StruckStringSynth.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -39,7 +40,7 @@ namespace
     };
 
     /** Toca las notas a la vez y mide la salida durante `seconds`. */
-    Measurement render (StruckStringSynth& synth, const std::vector<int>& pitches,
+    Measurement render (IInstrument& synth, const std::vector<int>& pitches,
                         int velocity, double seconds)
     {
         synth.prepare (sampleRate, blockSize);
@@ -155,6 +156,93 @@ TEST_CASE ("Tocar fuerte cambia el color, no sólo el volumen", "[instrument][le
     // espectro. Se aproxima contando cruces por cero, que suben con el
     // contenido agudo sin necesidad de una FFT.
     CHECK (loud.rms > soft.rms);
+}
+
+TEST_CASE ("Todos los instrumentos respetan el presupuesto de nivel", "[instrument][level][catalogue]")
+{
+    // El bug de los graves del piano fue de nivel, y con cinco instrumentos más
+    // la ocasión de repetirlo se multiplica por cinco. Estas comprobaciones son
+    // baratas y se aplican al catálogo entero: ninguno puede recortar solo, y
+    // ninguno puede sonar al doble que los demás — cambiar de instrumento no
+    // debe obligar a tocar el volumen del sistema.
+    const std::vector<InstrumentId> catalogue {
+        InstrumentId::piano, InstrumentId::electricPiano, InstrumentId::organ,
+        InstrumentId::accordion, InstrumentId::strings, InstrumentId::vibraphone
+    };
+
+    std::vector<float> singleNotePeaks;
+
+    for (auto id : catalogue)
+    {
+        auto instrument = createInstrument (id);
+        REQUIRE (instrument != nullptr);
+
+        // Las cuerdas tardan 320 ms en entrar: hay que medir más rato o se
+        // mediría el silencio del ataque.
+        const auto single = render (*instrument, { 60 }, 110, 2.0);
+        const auto chord = render (*instrument, { 48, 52, 55, 60, 64, 67 }, 120, 2.0);
+
+        std::cout << "  [catálogo] " << instrumentName (id).toStdString()
+                  << "\tnota pico " << single.peak << " rms " << single.rms
+                  << "\tacorde x6 pico " << chord.peak << " rms " << chord.rms << '\n';
+
+        INFO ("instrumento " << instrumentName (id).toStdString());
+
+        CHECK (single.peak > 0.05f);        // se oye
+        CHECK (single.peak < 0.9f);         // no recorta él solo
+        CHECK (chord.peak < 2.5f);          // el limitador no tiene que hacer milagros
+
+        singleNotePeaks.push_back (single.peak);
+    }
+
+    const auto quietest = *std::min_element (singleNotePeaks.begin(), singleNotePeaks.end());
+    const auto loudest = *std::max_element (singleNotePeaks.begin(), singleNotePeaks.end());
+
+    // Margen estrecho a propósito: si alguien retoca una voz y desequilibra el
+    // catálogo, este test tiene que quejarse. Con 2,5 el acordeón al doble del
+    // piano pasaba sin enterarse nadie.
+    CHECK (loudest < quietest * 1.5f);
+}
+
+TEST_CASE ("Cada instrumento se apaga al soltar la tecla", "[instrument][catalogue]")
+{
+    // Un órgano o un acordeón suenan mientras aguantas: si el Note Off no
+    // bajara el apagador, la nota se quedaría sonando para siempre. Es el fallo
+    // más obvio posible y el más fácil de no probar.
+    for (auto id : { InstrumentId::piano, InstrumentId::electricPiano, InstrumentId::organ,
+                     InstrumentId::accordion, InstrumentId::strings, InstrumentId::vibraphone })
+    {
+        auto instrument = createInstrument (id);
+        instrument->prepare (sampleRate, blockSize);
+
+        juce::AudioBuffer<float> buffer (2, blockSize);
+
+        StampedMidiEvent on;
+        on.message = noteOn (60, 100);
+        on.renderOffset = 0;
+        buffer.clear();
+        instrument->process (buffer, MidiEventSpan { &on, 1 });
+
+        INFO ("instrumento " << instrumentName (id).toStdString());
+        CHECK (instrument->activeVoiceCount() == 1);
+
+        StampedMidiEvent off;
+        off.message.bytes[0] = 0x80;
+        off.message.bytes[1] = 60;
+        off.message.size = 3;
+        off.renderOffset = 0;
+        buffer.clear();
+        instrument->process (buffer, MidiEventSpan { &off, 1 });
+
+        // Tres segundos son de sobra para cualquier extinción del catálogo.
+        for (int block = 0; block < static_cast<int> (3.0 * sampleRate / blockSize); ++block)
+        {
+            buffer.clear();
+            instrument->process (buffer, MidiEventSpan { nullptr, 0 });
+        }
+
+        CHECK (instrument->activeVoiceCount() == 0);
+    }
 }
 
 TEST_CASE ("El limitador no persigue los batidos de los graves", "[instrument][limiter]")

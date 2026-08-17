@@ -243,7 +243,24 @@ void AudioDeviceHost::close()
 void AudioDeviceHost::setInstrument (core::IInstrument* newInstrument)
 {
     jassert (! isRunning());        // sólo con el motor parado
-    instrument = newInstrument;
+    instrument.store (newInstrument, std::memory_order_release);
+}
+
+void AudioDeviceHost::swapInstrument (core::IInstrument* newInstrument) noexcept
+{
+    if (auto* previous = instrument.load (std::memory_order_acquire))
+        previous->reset();          // que no se quede nada sonando
+
+    if (newInstrument != nullptr && device != nullptr)
+        newInstrument->prepare (device->getCurrentSampleRate(),
+                                device->getCurrentBufferSizeSamples());
+
+    instrument.store (newInstrument, std::memory_order_release);
+}
+
+void AudioDeviceHost::setReverbMix (float mix) noexcept
+{
+    targetReverbMix.store (juce::jlimit (0.0f, 1.0f, mix), std::memory_order_relaxed);
 }
 
 void AudioDeviceHost::resetHealthCounters() noexcept
@@ -280,8 +297,24 @@ void AudioDeviceHost::audioDeviceAboutToStart (juce::AudioIODevice* startingDevi
     keyboard.reset();
     limiter.prepare (rate);
 
-    if (instrument != nullptr)
-        instrument->prepare (rate, blockSize);
+    // Toda la memoria de la reverberación se reserva aquí, con el stream
+    // parado: en el callback no se asigna nada (invariante 1).
+    reverb.setSampleRate (rate);
+    reverb.reset();
+
+    juce::Reverb::Parameters parameters;
+    parameters.roomSize = 0.62f;
+    parameters.damping = 0.45f;
+    parameters.width = 1.0f;
+    parameters.wetLevel = 1.0f;     // la mezcla la hacemos nosotros
+    parameters.dryLevel = 0.0f;
+    reverb.setParameters (parameters);
+
+    reverbScratch.setSize (2, juce::jmax (blockSize, 1), false, true, false);
+    currentReverbMix = targetReverbMix.load (std::memory_order_relaxed);
+
+    if (auto* current = instrument.load (std::memory_order_acquire))
+        current->prepare (rate, blockSize);
 
     lastCallbackSeconds = 0.0;
     streamStartSeconds = nowSeconds();
@@ -298,8 +331,8 @@ void AudioDeviceHost::audioDeviceAboutToStart (juce::AudioIODevice* startingDevi
 
 void AudioDeviceHost::audioDeviceStopped()
 {
-    if (instrument != nullptr)
-        instrument->reset();
+    if (auto* current = instrument.load (std::memory_order_acquire))
+        current->reset();
 }
 
 void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
@@ -368,14 +401,48 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
     }
 
     // ── Síntesis ────────────────────────────────────────────────────────────
-    if (instrument != nullptr && numOutputChannels > 0)
+    auto* currentInstrument = instrument.load (std::memory_order_acquire);
+
+    if (currentInstrument != nullptr && numOutputChannels > 0)
     {
         juce::AudioBuffer<float> buffer (outputChannelData, numOutputChannels, numSamples);
 
-        instrument->process (buffer, core::MidiEventSpan { eventScratch.data(), numEvents });
+        currentInstrument->process (buffer, core::MidiEventSpan { eventScratch.data(), numEvents });
 
         float* left = outputChannelData[0];
         float* right = numOutputChannels > 1 ? outputChannelData[1] : nullptr;
+
+        // ── Reverberación ───────────────────────────────────────────────────
+        //
+        // La mezcla se interpola por bloque en vez de saltar: mover el mando de
+        // golpe con la reverberación llena produce un salto de nivel audible.
+        const float wanted = targetReverbMix.load (std::memory_order_relaxed);
+        currentReverbMix += 0.25f * (wanted - currentReverbMix);
+
+        if (currentReverbMix > 0.001f && reverbScratch.getNumSamples() >= numSamples)
+        {
+            auto* wetLeft = reverbScratch.getWritePointer (0);
+            auto* wetRight = reverbScratch.getWritePointer (1);
+
+            juce::FloatVectorOperations::copy (wetLeft, left, numSamples);
+            juce::FloatVectorOperations::copy (wetRight, right != nullptr ? right : left, numSamples);
+
+            reverb.processStereo (wetLeft, wetRight, numSamples);
+
+            // Mezcla con compensación de potencia: sumando en lineal, la
+            // posición central quedaría más floja que los dos extremos.
+            const float wetGain = std::sqrt (currentReverbMix);
+            const float dryGain = std::sqrt (1.0f - currentReverbMix);
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                const float dry = left[i];
+                left[i] = dry * dryGain + wetLeft[i] * wetGain;
+
+                if (right != nullptr)
+                    right[i] = right[i] * dryGain + wetRight[i] * wetGain;
+            }
+        }
 
         limiter.process (left, right, numSamples);
 
@@ -432,7 +499,8 @@ void AudioDeviceHost::publishSnapshot (int numSamples, double) noexcept
     snapshot.gainReduction = limiter.currentGainReduction();
     snapshot.peakLevel = peakLevel;
 
-    snapshot.activeVoices = instrument != nullptr ? instrument->activeVoiceCount() : 0;
+    auto* current = instrument.load (std::memory_order_acquire);
+    snapshot.activeVoices = current != nullptr ? current->activeVoiceCount() : 0;
     snapshot.numKeysDown = keyboard.numKeysDown();
     snapshot.sustainValue = keyboard.sustainPedalValue();
     snapshot.noteOnCount = noteOnCount;

@@ -5,7 +5,7 @@
 #include "NowPlayingView.h"
 #include "PianoKeyboardView.h"
 
-#include <core/instrument/StruckStringSynth.h>
+#include <core/instrument/Instruments.h>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -37,9 +37,16 @@ private:
     void openSelectedAudioDevice();
     void showMessage (const juce::String& text, bool isError);
     void sendNote (int note, int velocity, bool on);
+    void selectInstrument (core::InstrumentId id);
 
     // ── Dominio de tiempo real ──────────────────────────────────────────────
-    core::StruckStringSynth synth { 32 };
+    //
+    // El instrumento anterior se conserva vivo un rato tras el cambio: el hilo
+    // de audio puede estar todavía dentro de su process() cuando la UI ya ha
+    // publicado el nuevo puntero.
+    std::unique_ptr<core::IInstrument> instrument;
+    std::unique_ptr<core::IInstrument> retiredInstrument;
+
     AudioDeviceHost audioHost;
     MidiInputHost midiHost { audioHost };
 
@@ -47,9 +54,10 @@ private:
     PianoKeyboardView keyboardView;
     NowPlayingView nowPlayingView;
 
-    juce::ComboBox audioDeviceBox, midiDeviceBox, bufferSizeBox;
+    juce::ComboBox audioDeviceBox, midiDeviceBox, bufferSizeBox, instrumentBox;
     juce::ToggleButton exclusiveToggle { "Modo exclusivo (menos latencia)" };
-    juce::Label statusLabel, messageLabel;
+    juce::Slider reverbSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
+    juce::Label reverbLabel, statusLabel, messageLabel;
     juce::TextButton panicButton { "Silencio" };
 
     juce::String pendingMessage;
