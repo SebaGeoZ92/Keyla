@@ -178,10 +178,12 @@ void StruckStringSynth::renderVoices (float* left, float* right, int startSample
                 right[startSample + i] += value;
         }
 
-        // Una voz se libera cuando ya no aporta nada audible. Sin esto, las
-        // notas graves ocuparían una voz durante nueve segundos y el robo de
-        // voces se dispararía en cualquier pasaje con pedal.
-        if (voice.peakLevel() < 1.0e-5)
+        // Una voz se libera cuando ya no aporta nada audible. El umbral está en
+        // −80 dBFS y no más abajo a propósito: una caída exponencial tarda
+        // muchísimo en llegar al último tramo, y perseguir −100 dBFS mantiene la
+        // voz ocupada diez segundos después de que nadie la oiga. Eso dispara el
+        // robo de voces en cualquier pasaje con pedal.
+        if (voice.peakLevel() < 1.0e-4)
         {
             voice = Voice {};
             --active;
@@ -255,7 +257,15 @@ void StruckStringSynth::noteOn (int pitch, int velocity) noexcept
 
     // La amplitud sigue una curva, no una recta: el oído es logarítmico y una
     // rampa lineal de velocity se siente muerta en el pianissimo.
-    voice->amplitude = 0.20 * std::pow (velocityNorm, 1.6);
+    //
+    // El nivel es el de una voz con la energía ya normalizada abajo, así que
+    // vale igual para un Do2 de 24 parciales que para un Do6 de dos.
+    //
+    // Con la energía a 1 y las fases repartidas, el pico instantáneo de una voz
+    // ronda 2,2 veces esta cifra. A 0,25 una nota sola llega a ~0,55 de fondo
+    // de escala y un acorde de seis deja al limitador trabajando poco. Subirlo
+    // "porque suena flojo" es exactamente el error que produjo la saturación.
+    voice->amplitude = 0.25 * std::pow (velocityNorm, 1.6);
 
     const double fundamental = midiNoteToHertz (pitch);
     const double B = inharmonicity (pitch);
@@ -297,8 +307,13 @@ void StruckStringSynth::noteOn (int pitch, int velocity) noexcept
             break;
 
         voice->phaseInc[static_cast<std::size_t> (p)] = twoPi * frequency / sampleRate;
-        voice->phase[static_cast<std::size_t> (p)] = 0.0;
         voice->level[static_cast<std::size_t> (p)] = std::pow (1.0 / n, 3.0 - brightness);
+
+        // Fase inicial repartida, no cero. Con todos los parciales arrancando
+        // alineados se suman en fase el primer instante y producen un pico que
+        // no existe en ninguna cuerda real — y que satura el limitador justo en
+        // el ataque, que es cuando más se nota.
+        voice->phase[static_cast<std::size_t> (p)] = (voice->nextNoise() * 0.5 + 0.5) * twoPi;
 
         // Cada parcial se apaga a su ritmo, y los altos antes que el
         // fundamental: eso es lo que hace que un sonido percutido lo parezca.
@@ -310,6 +325,30 @@ void StruckStringSynth::noteOn (int pitch, int velocity) noexcept
 
     // Al menos el fundamental, aunque la nota sea altísima.
     voice->activePartials = std::max (1, active);
+
+    // ── Normalización ───────────────────────────────────────────────────────
+    //
+    // Sin esto, cuantos más parciales tiene una nota más suena, y como el
+    // número de parciales depende del registro, las graves salían al doble de
+    // volumen que las agudas. Seis notas graves saturaban el limitador y el
+    // recorte convertía el acorde en ruido.
+    //
+    // Se normaliza la **energía** (suma de cuadrados) y no la suma de niveles,
+    // porque con las fases repartidas los parciales no se suman en línea recta:
+    // lo que el oído sigue es la energía. Así el brillo cambia el color del
+    // sonido sin cambiar lo fuerte que suena, que es justo lo que se quería.
+    double energy = 0.0;
+
+    for (int p = 0; p < voice->activePartials; ++p)
+        energy += voice->level[static_cast<std::size_t> (p)] * voice->level[static_cast<std::size_t> (p)];
+
+    if (energy > 0.0)
+    {
+        const double normalisation = 1.0 / std::sqrt (energy);
+
+        for (int p = 0; p < voice->activePartials; ++p)
+            voice->level[static_cast<std::size_t> (p)] *= normalisation;
+    }
 }
 
 void StruckStringSynth::noteOff (int pitch) noexcept
