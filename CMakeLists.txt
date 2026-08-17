@@ -36,6 +36,7 @@ include(KeylaCompilerFlags)
 include(FetchJUCE)
 
 add_subdirectory(src/core)
+add_subdirectory(src/app)
 add_subdirectory(src/tools/audio_probe)
 
 if (KEYLA_BUILD_TESTS)

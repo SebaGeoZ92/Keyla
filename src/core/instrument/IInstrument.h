@@ -57,6 +57,10 @@ public:
     virtual void reset() = 0;
 
     virtual InstrumentInfo info() const = 0;
+
+    /** Voces sonando ahora mismo, para el panel de salud. -1 si el instrumento
+        no lleva la cuenta. Informativo: nadie debe tomar decisiones con esto. */
+    virtual int activeVoiceCount() const noexcept { return -1; }
 };
 
 } // namespace keyla::core

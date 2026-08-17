@@ -5,6 +5,7 @@
 # lo vigila CheckCoreIsolation.cmake, que corre en cada build.
 
 add_library(keyla_core STATIC
+        audio/Limiter.h
         time/TimeSignature.h
         time/Transport.h
         time/Transport.cpp
@@ -12,7 +13,9 @@ add_library(keyla_core STATIC
         midi/LockFreeQueue.h
         midi/KeyboardState.h
         midi/KeyboardState.cpp
-        instrument/IInstrument.h)
+        instrument/IInstrument.h
+        instrument/StruckStringSynth.h
+        instrument/StruckStringSynth.cpp)
 
 target_include_directories(keyla_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
