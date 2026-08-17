@@ -1,7 +1,11 @@
 #include "MainComponent.h"
 
+#include <core/text/Utf8.h>
+
 namespace keyla::app
 {
+
+using keyla::operator""_u8;
 
 namespace
 {
@@ -46,6 +50,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (bufferSizeBox);
     addAndMakeVisible (exclusiveToggle);
     addAndMakeVisible (keyboardView);
+    addAndMakeVisible (nowPlayingView);
     addAndMakeVisible (statusLabel);
     addAndMakeVisible (messageLabel);
     addAndMakeVisible (panicButton);
@@ -70,7 +75,7 @@ MainComponent::MainComponent()
     {
         showMessage (midiHost.isConnected()
                          ? "Teclado conectado: " + midiHost.wantedDeviceName()
-                         : "Teclado desconectado. Se reconectará solo al volver a enchufarlo.",
+                         : "Teclado desconectado. Se reconectará solo al volver a enchufarlo."_u8,
                      ! midiHost.isConnected());
     };
 
@@ -189,9 +194,9 @@ void MainComponent::openSelectedAudioDevice()
     juce::String note;
 
     if (audioHost.outputLooksBluetooth())
-        note = "  ·  AVISO: salida Bluetooth, 100-300 ms. Con esto no se puede tocar.";
+        note = "  ·  AVISO: salida Bluetooth, 100-300 ms. Con esto no se puede tocar."_u8;
     else if (audioHost.outputLooksWireless())
-        note = "  ·  Salida inalámbrica: la latencia declarada puede quedarse corta.";
+        note = "  ·  Salida inalámbrica: la latencia declarada puede quedarse corta."_u8;
 
     showMessage ("Sonando por " + audioHost.deviceName() + note,
                  audioHost.outputLooksBluetooth());
@@ -215,6 +220,7 @@ void MainComponent::timerCallback()
     const auto snapshot = audioHost.snapshot();
 
     keyboardView.updateFrom (snapshot);
+    nowPlayingView.updateFrom (snapshot);
 
     if (pendingMessage.isNotEmpty())
     {
@@ -231,21 +237,23 @@ void MainComponent::timerCallback()
         return;
     }
 
+    const auto separator = "   ·   "_u8;
+
     juce::String status;
     status << juce::String (snapshot.sampleRate / 1000.0, 1) << " kHz"
-           << "   ·   buffer " << snapshot.bufferSize
+           << separator << "buffer " << snapshot.bufferSize
            << " (" << juce::String (1000.0 * snapshot.bufferSize / snapshot.sampleRate, 2) << " ms)"
-           << "   ·   latencia de salida " << juce::String (snapshot.outputLatencyMs, 1) << " ms"
-           << "   ·   dropouts " << juce::String (snapshot.dropouts)
-           << "   ·   CPU " << juce::String (snapshot.cpuMean * 100.0, 1) << " %"
-           << "   ·   jitter " << juce::String (snapshot.callbackJitterMs, 2) << " ms"
-           << "   ·   voces " << juce::String (snapshot.activeVoices);
+           << separator << "latencia de salida " << juce::String (snapshot.outputLatencyMs, 1) << " ms"
+           << separator << "dropouts " << juce::String (snapshot.dropouts)
+           << separator << "CPU " << juce::String (snapshot.cpuMean * 100.0, 1) << " %"
+           << separator << "jitter " << juce::String (snapshot.callbackJitterMs, 2) << " ms"
+           << separator << "voces " << juce::String (snapshot.activeVoices);
 
     if (snapshot.sustainValue >= core::sustainPedalThreshold)
-        status << "   ·   PEDAL";
+        status << separator << "PEDAL";
 
     if (snapshot.midiRejected > 0)
-        status << "   ·   MIDI PERDIDO " << juce::String (snapshot.midiRejected);
+        status << separator << "MIDI PERDIDO " << juce::String (snapshot.midiRejected);
 
     statusLabel.setText (status, juce::dontSendNotification);
 }
@@ -277,6 +285,10 @@ void MainComponent::resized()
 
     area.removeFromTop (10);
     messageLabel.setBounds (area.removeFromTop (22));
+
+    area.removeFromTop (6);
+    nowPlayingView.setBounds (area.removeFromTop (40));
+    area.removeFromTop (6);
 
     statusLabel.setBounds (area.removeFromBottom (22));
     area.removeFromBottom (8);

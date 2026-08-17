@@ -128,6 +128,8 @@ private:
     // Sólo del hilo de audio.
     double outputLatencySeconds { 0.0 };
     double lastCallbackSeconds { 0.0 };
+    double streamStartSeconds { 0.0 };
+    bool streamSettled { false };
     double cpuAverage { 0.0 };
     double cpuPeak { 0.0 };
     double jitterMean { 0.0 };

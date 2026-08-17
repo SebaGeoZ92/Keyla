@@ -6,6 +6,7 @@
 
 add_library(keyla_core STATIC
         audio/Limiter.h
+        text/Utf8.h
         time/TimeSignature.h
         time/Transport.h
         time/Transport.cpp
@@ -15,7 +16,11 @@ add_library(keyla_core STATIC
         midi/KeyboardState.cpp
         instrument/IInstrument.h
         instrument/StruckStringSynth.h
-        instrument/StruckStringSynth.cpp)
+        instrument/StruckStringSynth.cpp
+        music/Pitch.h
+        music/Pitch.cpp
+        music/ChordRecognizer.h
+        music/ChordRecognizer.cpp)
 
 target_include_directories(keyla_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 

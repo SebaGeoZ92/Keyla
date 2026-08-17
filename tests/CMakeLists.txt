@@ -3,7 +3,8 @@
 add_executable(keyla_tests
         TransportTests.cpp
         LockFreeQueueTests.cpp
-        KeyboardStateTests.cpp)
+        KeyboardStateTests.cpp
+        MusicTests.cpp)
 
 target_link_libraries(keyla_tests PRIVATE
         keyla_core

@@ -36,6 +36,7 @@ if (KEYLA_ENABLE_ASIO)
 endif()
 
 target_link_libraries(audio_probe PRIVATE
+        keyla_core
         juce::juce_audio_devices
         juce::juce_audio_basics
         juce::juce_events

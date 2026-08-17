@@ -13,6 +13,7 @@ target_sources(keyla PRIVATE
         AudioDeviceHost.cpp
         MidiInputHost.cpp
         ui/MainComponent.cpp
+        ui/NowPlayingView.cpp
         ui/PianoKeyboardView.cpp)
 
 target_compile_definitions(keyla PRIVATE

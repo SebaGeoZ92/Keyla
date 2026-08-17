@@ -1,5 +1,7 @@
 #include "AudioDeviceHost.h"
 
+#include <core/text/Utf8.h>
+
 #include <algorithm>
 #include <cmath>
 #include <thread>
@@ -9,6 +11,7 @@ namespace keyla::app
 
 using core::RawMidiMessage;
 using core::StampedMidiEvent;
+using keyla::operator""_u8;
 
 namespace
 {
@@ -102,7 +105,7 @@ juce::String AudioDeviceHost::open (const Settings& settings)
     const auto outputs = deviceType->getDeviceNames (false);
 
     if (outputs.isEmpty())
-        return "No hay ningún dispositivo de salida en " + deviceType->getTypeName() + ".";
+        return "No hay ningún dispositivo de salida en "_u8 + deviceType->getTypeName() + ".";
 
     juce::String wanted = settings.outputDeviceName;
 
@@ -114,7 +117,7 @@ juce::String AudioDeviceHost::open (const Settings& settings)
     }
     else if (! outputs.contains (wanted))
     {
-        return "El dispositivo \"" + wanted + "\" ya no está disponible.";
+        return "El dispositivo \"" + wanted + "\" ya no está disponible."_u8;
     }
 
     device.reset (deviceType->createDevice (wanted, {}));
@@ -182,7 +185,7 @@ juce::String AudioDeviceHost::open (const Settings& settings)
         device.reset();
         return active.exclusive
              ? "No se pudo abrir en modo exclusivo: " + error
-               + "\nSuele significar que otra aplicación tiene el dispositivo tomado."
+               + "\nSuele significar que otra aplicación tiene el dispositivo tomado."_u8
              : "No se pudo abrir el dispositivo: " + error;
     }
 
@@ -204,9 +207,9 @@ juce::String AudioDeviceHost::open (const Settings& settings)
             device->stop();
             device.reset();
 
-            return "\"" + wanted + "\" se abrió pero no entrega audio: el stream no arranca."
+            return "\"" + wanted + "\" se abrió pero no entrega audio: el stream no arranca."_u8
                  + (lastError.isEmpty() ? juce::String() : "\n" + lastError)
-                 + "\nEs típico de los dispositivos virtuales. Elige la salida física.";
+                 + "\nEs típico de los dispositivos virtuales. Elige la salida física."_u8;
         }
     }
 
@@ -275,6 +278,8 @@ void AudioDeviceHost::audioDeviceAboutToStart (juce::AudioIODevice* startingDevi
         instrument->prepare (rate, blockSize);
 
     lastCallbackSeconds = 0.0;
+    streamStartSeconds = nowSeconds();
+    streamSettled = false;
     cpuAverage = 0.0;
     cpuPeak = 0.0;
     jitterMean = 0.0;
@@ -308,8 +313,15 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
     {
         const double delta = callbackStart - lastCallbackSeconds;
 
-        if (delta > periodSeconds * 1.5 + 0.0005)
+        // Los primeros callbacks de un stream exclusivo llegan irregulares
+        // mientras el driver se asienta, y contar eso como dropout es una
+        // mentira que sale en pantalla nada más abrir. Se ignora un cuarto de
+        // segundo: lo que pase después sí es un fallo de verdad.
+        if (streamSettled && delta > periodSeconds * 1.5 + 0.0005)
             ++dropouts;
+
+        if (! streamSettled && callbackStart - streamStartSeconds > 0.25)
+            streamSettled = true;
 
         // Welford sobre el intervalo real entre callbacks (doc 04 §5).
         const double deltaMs = delta * 1000.0;

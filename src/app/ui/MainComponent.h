@@ -2,6 +2,7 @@
 
 #include "../AudioDeviceHost.h"
 #include "../MidiInputHost.h"
+#include "NowPlayingView.h"
 #include "PianoKeyboardView.h"
 
 #include <core/instrument/StruckStringSynth.h>
@@ -44,6 +45,7 @@ private:
 
     // ── UI ──────────────────────────────────────────────────────────────────
     PianoKeyboardView keyboardView;
+    NowPlayingView nowPlayingView;
 
     juce::ComboBox audioDeviceBox, midiDeviceBox, bufferSizeBox;
     juce::ToggleButton exclusiveToggle { "Modo exclusivo (menos latencia)" };
