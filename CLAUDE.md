@@ -159,5 +159,9 @@ la aporta el usuario.
   `CharPointer_ASCII`: interpreta byte a byte como Latin-1 y un texto UTF-8 sale
   doblemente codificado por consola. No hay aviso del compilador; sólo se ve en
   la salida.
+- **Nada con acentos viaja por la línea de comandos en Windows.** Es la otra
+  cara del punto anterior: los nombres de test en español rompen
+  `catch_discover_tests`, que se los pasa al ejecutable como argumento y recibe
+  basura. `tests/` registra una sola entrada de ctest por eso.
 - `core/` se testea sin hardware. Las sesiones grabadas reales se guardan como
   fixtures en `tests/` — son el mejor material de test que tiene el proyecto.

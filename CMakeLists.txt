@@ -30,7 +30,16 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 option(KEYLA_ENABLE_ASIO "Compilar con soporte ASIO (requiere el SDK de Steinberg)" OFF)
 set(KEYLA_ASIO_SDK_PATH "" CACHE PATH "Ruta al SDK de ASIO de Steinberg (common/)")
 
+option(KEYLA_BUILD_TESTS "Compilar los tests de core/" ON)
+
 include(KeylaCompilerFlags)
 include(FetchJUCE)
 
+add_subdirectory(src/core)
 add_subdirectory(src/tools/audio_probe)
+
+if (KEYLA_BUILD_TESTS)
+    enable_testing()
+    include(FetchCatch2)
+    add_subdirectory(tests)
+endif()
