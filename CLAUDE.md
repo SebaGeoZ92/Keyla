@@ -17,17 +17,24 @@ El diseño completo está en `docs/`. Lo esencial:
 
 ## Estado
 
-**Fase 0** — `src/tools/audio_probe` implementado y medido sobre el hardware de
-referencia (SE49 + H510-PRO, WASAPI Exclusive 48 kHz / 144 samples). Resultados
-contra `docs/04-medicion-de-latencia.md` §8:
+**Fase 0 cerrada.** `src/tools/audio_probe` implementado y medido sobre el
+hardware de referencia (SE49 + H510-PRO, WASAPI Exclusive 48 kHz / 144 samples).
+Se cumple la columna *objetivo* de `docs/04-medicion-de-latencia.md` §8 entera:
 
-| Criterio | Objetivo | Medido |
-|---|---|---|
-| Latencia del sistema p50 | ≤ 8 ms | **7,54 ms** |
-| Latencia del sistema máx | ≤ 12 ms | **9,50 ms** |
-| Carga de CPU, 32 voces | < 30 % | **1,7 % (p95)** |
-| Jitter de entrada MIDI σ | < 1,5 ms | **0,025 ms** (ruta software, vía loopMIDI) |
-| Dropouts en 10 min | 0 | pendiente de confirmar |
+| Criterio | Objetivo | Medido | De dónde |
+|---|---|---|---|
+| Latencia del sistema p50 | ≤ 8 ms | **7,54 ms** | tirada en vivo, 467 notas |
+| Latencia del sistema máx | ≤ 12 ms | **9,50 ms** | ídem |
+| Dropouts en 10 min | 0 | **0** en 200 010 callbacks | tirada de 600 s |
+| Carga de CPU, 32 voces | < 30 % | **1,5 % (p95)**, 20,2 % pico | ídem |
+| Jitter de entrada MIDI σ | < 1,5 ms | **0,025 ms** | `--selftest` vía loopMIDI |
+
+Las cifras salen de **tres tiradas distintas**, no de una sola: son propiedades
+independientes y ninguna necesita medirse a la vez que las demás. Los dropouts y
+la CPU no dependen de que haya notas.
+
+Conclusión para el doc 03 §2: **no hace falta interfaz de audio** — con la
+salvedad de abajo sobre la latencia declarada.
 
 Dos salvedades que hay que arrastrar:
 
@@ -39,8 +46,10 @@ Dos salvedades que hay que arrastrar:
 - El jitter MIDI de 0,025 ms es de un **puerto virtual**, no del bus USB. Prueba
   que el código no añade jitter; el suelo real del USB-MIDI sigue siendo 1–2 ms.
 
-Falta `midi_monitor` (fase 0-A del doc 05), que no se ha llegado a necesitar.
-No empezar fases posteriores hasta cerrar los dropouts.
+`midi_monitor` (fase 0-A del doc 05) no se ha llegado a necesitar: `audio_probe`
+cubre lo que iba a medir. No se escribe hasta que haga falta.
+
+Siguiente paso: **fase 1**, instrumento tocable (doc 05).
 
 ## Invariantes de arquitectura
 
