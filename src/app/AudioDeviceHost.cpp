@@ -85,6 +85,12 @@ bool AudioDeviceHost::outputLooksBluetooth() const
     return nameMatchesAny (deviceName(), { "bluetooth", "bth", "airpods", "hands-free", "a2dp" });
 }
 
+bool AudioDeviceHost::nameLooksVirtual (const juce::String& name)
+{
+    return nameMatchesAny (name, { "virtual", "voicemeeter", "vb-audio", "vb-cable",
+                                   "sonar", "cable output", "cable input", "steelseries" });
+}
+
 bool AudioDeviceHost::outputLooksWireless() const
 {
     return ! outputLooksBluetooth()

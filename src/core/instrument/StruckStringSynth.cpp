@@ -151,7 +151,10 @@ void StruckStringSynth::renderVoices (float* left, float* right, int startSample
 
             if (voice.knockLevel > 1.0e-5)
             {
-                sample += voice.nextNoise() * voice.knockLevel;
+                voice.knockFilterState += voice.knockFilterCoef
+                                        * (voice.nextNoise() - voice.knockFilterState);
+
+                sample += voice.knockFilterState * voice.knockLevel;
                 voice.knockLevel *= voice.knockDecay;
             }
 
@@ -261,12 +264,23 @@ void StruckStringSynth::noteOn (int pitch, int velocity) noexcept
     // Tocar fuerte añade armónicos. Suave: los parciales altos casi no suenan.
     const double brightness = 0.6 + 1.9 * velocityNorm;
 
-    // El golpe del martillo. Los graves suenan más "de madera" y los agudos más
-    // secos, así que el chasquido dura un poco más abajo.
+    // El golpe del martillo. Nivel contenido y filtrado paso bajo: sin el
+    // filtro esto se oye como un clic digital, que es exactamente la queja que
+    // provocó la primera versión. Un martillo de fieltro sobre una cuerda no
+    // tiene agudos por encima de un par de kHz.
     const double t = std::clamp ((pitch - 21) / 66.0, 0.0, 1.0);
-    voice->knockLevel = 0.55 * velocityNorm * (1.0 - 0.5 * t);
-    voice->knockDecay = std::exp (-1.0 / ((0.010 - 0.006 * t) * sampleRate));
-    voice->noiseState = static_cast<std::uint32_t> (pitch * 2654435761u + 1u);
+
+    // Escala con la velocity al cuadrado: al tocar suave el martillo casi no
+    // suena, y es al tocar fuerte cuando el golpe se hace evidente.
+    voice->knockLevel = 0.22 * velocityNorm * velocityNorm * (1.0 - 0.4 * t);
+    voice->knockDecay = std::exp (-1.0 / ((0.008 - 0.005 * t) * sampleRate));
+    voice->knockFilterState = 0.0;
+    voice->noiseState = static_cast<std::uint32_t> (pitch) * 2654435761u + 1u;
+
+    // Más apagado en los graves (madera gorda), algo más claro en los agudos.
+    const double knockCutoffHz = 700.0 + 1600.0 * t;
+    voice->knockFilterCoef = std::clamp (1.0 - std::exp (-twoPi * knockCutoffHz / sampleRate),
+                                         0.0, 1.0);
 
     // Cuántos parciales de verdad. Se cortan por dos sitios: por encima de
     // Nyquist habría aliasing, y por encima de unos 6 kHz el oído ya no

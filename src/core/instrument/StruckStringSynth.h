@@ -67,11 +67,14 @@ private:
         double releaseGain { 1.0 };     // apagador, 1 → 0 al soltar
         bool releasing { false };
 
-        // El golpe del martillo: un chasquido de ruido de unos milisegundos.
-        // Es lo que separa "percutido" de "soplado", y sin esto ninguna
-        // cantidad de parciales suena a piano.
+        // El golpe del martillo: un ruido corto que separa "percutido" de
+        // "soplado". Va filtrado paso bajo a propósito — el ruido blanco crudo
+        // se oye como un *clic* digital, no como madera. La diferencia entre un
+        // chasquido molesto y un golpe creíble está casi toda en ese filtro.
         double knockLevel { 0.0 };
         double knockDecay { 0.0 };
+        double knockFilterCoef { 0.0 };
+        double knockFilterState { 0.0 };
         std::uint32_t noiseState { 1 };
 
         int activePartials { 0 };

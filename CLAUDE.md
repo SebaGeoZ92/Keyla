@@ -126,11 +126,19 @@ Opciones de CMake:
 
 Medido con `audio_probe`, no supuesto:
 
-- **Los dispositivos virtuales de SteelSeries Sonar no dan stream**, ni en modo
-  exclusivo ni compartido: aceptan `open()`, levantan el flag de abierto y no
-  entregan ni un callback. Son la salida *predeterminada* de Windows aquí, así
-  que hay que pasar `--audio-out` con la salida física a mano. Cuando exista UI,
-  esto no puede ser un error silencioso.
+- **De los dispositivos virtuales de SteelSeries Sonar, unos dan stream y otros
+  no.** `Sonar - Gaming` acepta `open()`, levanta el flag de abierto y no
+  entrega ni un callback, ni en exclusivo ni en compartido. `Sonar - Chat` en
+  cambio funciona: 128 samples, 5,3 ms declarados, sin dropouts. La primera
+  versión de esta nota decía que ninguno funcionaba, y era generalizar de una
+  sola prueba.
+
+  En cualquier caso son un **mezclador por software**, no la tarjeta: añaden
+  proceso y latencia que el driver no declara, así que medir sobre ellos falsea
+  el resultado. Uno de ellos es la salida *predeterminada* de Windows aquí, de
+  modo que hay que elegir la salida física a mano — `--audio-out` en las
+  herramientas, y en la app se prefiere automáticamente la física y se avisa si
+  la elegida es virtual.
 - **El H510-PRO (inalámbrico de 2,4 GHz) sólo admite buffers de 144 en adelante**
   a 48 kHz en exclusivo, y declara 6 ms de latencia de salida. En modo compartido
   el mínimo sube a 480. Los 128 samples del doc 03 no son universales.

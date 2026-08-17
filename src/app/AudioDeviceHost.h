@@ -67,6 +67,13 @@ public:
     bool outputLooksWireless() const;
     bool outputLooksBluetooth() const;
 
+    /** True si el nombre delata un mezclador por software (SteelSeries Sonar,
+        Voicemeeter, VB-Cable...). No son un fallo —algunos funcionan— pero
+        añaden una capa de proceso y latencia que el driver no declara, así que
+        elegir uno sin querer falsea cualquier medida. */
+    static bool nameLooksVirtual (const juce::String& name);
+    bool outputLooksVirtual() const { return nameLooksVirtual (deviceName()); }
+
     // ── Instrumento ─────────────────────────────────────────────────────────
 
     /** Con el stream parado. El host no toma posesión. */

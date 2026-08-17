@@ -122,8 +122,26 @@ void MainComponent::rebuildAudioDeviceList()
 
     // Se recuerda por nombre, no por índice: la lista se reordena sola cuando
     // Windows cambia el dispositivo predeterminado (doc 01 §1.1).
-    const auto index = outputs.indexOf (previous);
-    audioDeviceBox.setSelectedItemIndex (index >= 0 ? index : 0, juce::dontSendNotification);
+    int index = outputs.indexOf (previous);
+
+    if (index < 0)
+    {
+        // Sin elección previa se prefiere una salida física. El predeterminado
+        // de Windows aquí es un mezclador virtual, y arrancar sobre él significa
+        // medir latencias que no son las del camino real hasta el oído.
+        index = 0;
+
+        for (int i = 0; i < outputs.size(); ++i)
+        {
+            if (! AudioDeviceHost::nameLooksVirtual (outputs[i]))
+            {
+                index = i;
+                break;
+            }
+        }
+    }
+
+    audioDeviceBox.setSelectedItemIndex (index, juce::dontSendNotification);
 }
 
 void MainComponent::rebuildMidiDeviceList()
@@ -195,6 +213,9 @@ void MainComponent::openSelectedAudioDevice()
 
     if (audioHost.outputLooksBluetooth())
         note = "  ·  AVISO: salida Bluetooth, 100-300 ms. Con esto no se puede tocar."_u8;
+    else if (audioHost.outputLooksVirtual())
+        note = "  ·  AVISO: es un mezclador virtual, no tu tarjeta. Añade latencia que no se"
+               " declara aquí. Elige la salida física."_u8;
     else if (audioHost.outputLooksWireless())
         note = "  ·  Salida inalámbrica: la latencia declarada puede quedarse corta."_u8;
 
