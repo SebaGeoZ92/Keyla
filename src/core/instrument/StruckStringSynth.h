@@ -32,7 +32,11 @@ namespace keyla::core
 class StruckStringSynth final : public IInstrument
 {
 public:
-    static constexpr int numPartials = 8;
+    /** Tope de parciales por voz. Cuántos se usan de verdad depende del
+        registro: un Do2 necesita muchos —con ocho sólo se llega a 520 Hz y lo
+        que sale es un bajo eléctrico, no un piano— y un Do6 no necesita casi
+        ninguno porque enseguida se sale de lo audible. */
+    static constexpr int maxPartials = 24;
 
     explicit StruckStringSynth (int maxVoices = 32);
 
@@ -59,16 +63,33 @@ private:
         std::uint64_t startOrder { 0 };
 
         double amplitude { 0.0 };
-        double attackGain { 0.0 };      // rampa de ataque, 0 → 1
+        double attackGain { 0.0 };      // rampa de entrada, 0 → 1
         double releaseGain { 1.0 };     // apagador, 1 → 0 al soltar
         bool releasing { false };
 
-        std::array<double, numPartials> phase {};
-        std::array<double, numPartials> phaseInc {};
-        std::array<double, numPartials> level {};
-        std::array<double, numPartials> decay {};
+        // El golpe del martillo: un chasquido de ruido de unos milisegundos.
+        // Es lo que separa "percutido" de "soplado", y sin esto ninguna
+        // cantidad de parciales suena a piano.
+        double knockLevel { 0.0 };
+        double knockDecay { 0.0 };
+        std::uint32_t noiseState { 1 };
+
+        int activePartials { 0 };
+        std::array<double, maxPartials> phase {};
+        std::array<double, maxPartials> phaseInc {};
+        std::array<double, maxPartials> level {};
+        std::array<double, maxPartials> decay {};
 
         double peakLevel() const noexcept;
+
+        /** Ruido blanco barato, sin asignar ni tocar el generador global. */
+        double nextNoise() noexcept
+        {
+            noiseState ^= noiseState << 13;
+            noiseState ^= noiseState >> 17;
+            noiseState ^= noiseState << 5;
+            return static_cast<double> (noiseState) / 2147483648.0 - 1.0;
+        }
     };
 
     void handleMessage (const RawMidiMessage& message) noexcept;

@@ -37,10 +37,10 @@ namespace
 
 double StruckStringSynth::Voice::peakLevel() const noexcept
 {
-    double sum = 0.0;
+    double sum = knockLevel;
 
-    for (auto value : level)
-        sum += value;
+    for (int p = 0; p < activePartials; ++p)
+        sum += level[static_cast<std::size_t> (p)];
 
     return sum * amplitude * releaseGain;
 }
@@ -136,7 +136,7 @@ void StruckStringSynth::renderVoices (float* left, float* right, int startSample
         {
             double sample = 0.0;
 
-            for (int p = 0; p < numPartials; ++p)
+            for (int p = 0; p < voice.activePartials; ++p)
             {
                 sample += std::sin (voice.phase[static_cast<std::size_t> (p)])
                         * voice.level[static_cast<std::size_t> (p)];
@@ -147,6 +147,12 @@ void StruckStringSynth::renderVoices (float* left, float* right, int startSample
                     voice.phase[static_cast<std::size_t> (p)] -= twoPi;
 
                 voice.level[static_cast<std::size_t> (p)] *= voice.decay[static_cast<std::size_t> (p)];
+            }
+
+            if (voice.knockLevel > 1.0e-5)
+            {
+                sample += voice.nextNoise() * voice.knockLevel;
+                voice.knockLevel *= voice.knockDecay;
             }
 
             if (voice.attackGain < 1.0)
@@ -255,30 +261,41 @@ void StruckStringSynth::noteOn (int pitch, int velocity) noexcept
     // Tocar fuerte añade armónicos. Suave: los parciales altos casi no suenan.
     const double brightness = 0.6 + 1.9 * velocityNorm;
 
-    for (int p = 0; p < numPartials; ++p)
+    // El golpe del martillo. Los graves suenan más "de madera" y los agudos más
+    // secos, así que el chasquido dura un poco más abajo.
+    const double t = std::clamp ((pitch - 21) / 66.0, 0.0, 1.0);
+    voice->knockLevel = 0.55 * velocityNorm * (1.0 - 0.5 * t);
+    voice->knockDecay = std::exp (-1.0 / ((0.010 - 0.006 * t) * sampleRate));
+    voice->noiseState = static_cast<std::uint32_t> (pitch * 2654435761u + 1u);
+
+    // Cuántos parciales de verdad. Se cortan por dos sitios: por encima de
+    // Nyquist habría aliasing, y por encima de unos 6 kHz el oído ya no
+    // distingue parciales individuales de un sonido percutido.
+    const double ceilingHz = std::min (6000.0, sampleRate * 0.45);
+    int active = 0;
+
+    for (int p = 0; p < maxPartials; ++p)
     {
         const double n = static_cast<double> (p + 1);
-
-        // Frecuencia del parcial con la corrección de rigidez de la cuerda.
         const double frequency = fundamental * n * std::sqrt (1.0 + B * n * n);
 
-        // Por encima de Nyquist no se sintetiza: sólo produciría aliasing.
-        if (frequency >= sampleRate * 0.48)
-        {
-            voice->level[static_cast<std::size_t> (p)] = 0.0;
-            voice->decay[static_cast<std::size_t> (p)] = 0.0;
-            voice->phaseInc[static_cast<std::size_t> (p)] = 0.0;
-            continue;
-        }
+        if (frequency >= ceilingHz)
+            break;
 
         voice->phaseInc[static_cast<std::size_t> (p)] = twoPi * frequency / sampleRate;
         voice->phase[static_cast<std::size_t> (p)] = 0.0;
         voice->level[static_cast<std::size_t> (p)] = std::pow (1.0 / n, 3.0 - brightness);
 
-        // Cada parcial se apaga a su ritmo, y los altos antes.
+        // Cada parcial se apaga a su ritmo, y los altos antes que el
+        // fundamental: eso es lo que hace que un sonido percutido lo parezca.
         const double tau = tau0 / std::pow (n, 0.8);
         voice->decay[static_cast<std::size_t> (p)] = std::exp (-1.0 / (tau * sampleRate));
+
+        ++active;
     }
+
+    // Al menos el fundamental, aunque la nota sea altísima.
+    voice->activePartials = std::max (1, active);
 }
 
 void StruckStringSynth::noteOff (int pitch) noexcept
