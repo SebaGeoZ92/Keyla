@@ -17,9 +17,30 @@ El diseño completo está en `docs/`. Lo esencial:
 
 ## Estado
 
-**Fase 0** — spike de latencia (`tools/audio_probe`). Todavía sin código.
-No empezar fases posteriores hasta que se cumplan los criterios de
-`docs/04-medicion-de-latencia.md` §8.
+**Fase 0** — `src/tools/audio_probe` implementado y medido sobre el hardware de
+referencia (SE49 + H510-PRO, WASAPI Exclusive 48 kHz / 144 samples). Resultados
+contra `docs/04-medicion-de-latencia.md` §8:
+
+| Criterio | Objetivo | Medido |
+|---|---|---|
+| Latencia del sistema p50 | ≤ 8 ms | **7,54 ms** |
+| Latencia del sistema máx | ≤ 12 ms | **9,50 ms** |
+| Carga de CPU, 32 voces | < 30 % | **1,7 % (p95)** |
+| Jitter de entrada MIDI σ | < 1,5 ms | **0,025 ms** (ruta software, vía loopMIDI) |
+| Dropouts en 10 min | 0 | pendiente de confirmar |
+
+Dos salvedades que hay que arrastrar:
+
+- La latencia de salida son los **6,00 ms que declara el driver**, no una medida.
+  Lo único medido con exactitud es la espera de buffer (1,5 ms). Con un receptor
+  inalámbrico de 2,4 GHz esa cifra declarada es lo menos fiable del informe:
+  hace falta el cable de loopback y `--calibrate` (doc 04 §3) antes de escribir
+  en ningún sitio que no hace falta interfaz de audio.
+- El jitter MIDI de 0,025 ms es de un **puerto virtual**, no del bus USB. Prueba
+  que el código no añade jitter; el suelo real del USB-MIDI sigue siendo 1–2 ms.
+
+Falta `midi_monitor` (fase 0-A del doc 05), que no se ha llegado a necesitar.
+No empezar fases posteriores hasta cerrar los dropouts.
 
 ## Invariantes de arquitectura
 
@@ -68,11 +89,66 @@ C++17/20 · JUCE · CMake · MSVC (Visual Studio 2022 Build Tools).
 
 ## Build
 
-Pendiente: se documenta aquí cuando exista `CMakeLists.txt`.
+Requiere CMake ≥ 3.22 y MSVC. JUCE se descarga solo la primera vez en
+`libs/_deps/` (ignorado por git); con `-DKEYLA_JUCE_PATH=<ruta>` usa una copia
+local y no descarga nada.
+
+```
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+cmake --build build --config Release --target audio_probe
+```
+
+El binario sale en
+`build/src/tools/audio_probe/audio_probe_artefacts/Release/audio_probe.exe`.
+
+**Siempre en Release.** En Debug las cifras de carga de CPU no significan nada;
+el propio informe lo avisa.
+
+Opciones de CMake:
+
+| Opción | Por defecto | Para qué |
+|---|---|---|
+| `KEYLA_ENABLE_ASIO` | OFF | Compilar con ASIO. Exige `KEYLA_ASIO_SDK_PATH`. |
+| `KEYLA_ASIO_SDK_PATH` | — | Ruta a `<sdk>/common` de Steinberg. No se versiona. |
+| `KEYLA_JUCE_TAG` | 8.0.15 | Tag de JUCE a descargar. |
+| `KEYLA_JUCE_PATH` | — | Checkout de JUCE ya existente. |
+
+### Lo que sabemos de esta máquina
+
+Medido con `audio_probe`, no supuesto:
+
+- **Los dispositivos virtuales de SteelSeries Sonar no dan stream**, ni en modo
+  exclusivo ni compartido: aceptan `open()`, levantan el flag de abierto y no
+  entregan ni un callback. Son la salida *predeterminada* de Windows aquí, así
+  que hay que pasar `--audio-out` con la salida física a mano. Cuando exista UI,
+  esto no puede ser un error silencioso.
+- **El H510-PRO (inalámbrico de 2,4 GHz) sólo admite buffers de 144 en adelante**
+  a 48 kHz en exclusivo, y declara 6 ms de latencia de salida. En modo compartido
+  el mínimo sube a 480. Los 128 samples del doc 03 no son universales.
+- Con 32 voces senoidales el hilo de audio va al **1,5 % de CPU (p95)** y el
+  jitter del callback es de **0,17 ms σ (5,7 % del periodo)**, dentro del 15 %
+  que pide el doc 04 §5. Sitio de sobra para un sampler.
+- El SE49 expone dos entradas MIDI (`SE49` y `MIDIIN2 (SE49)`) y **también una
+  salida**. Ojo: aparecer en las dos listas no lo convierte en un bucle.
+
+### Smart App Control
+
+Este equipo tiene Smart App Control activado
+(`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy\VerifiedAndReputablePolicyState = 1`),
+que **bloquea cualquier ejecutable recién compilado**, incluido un hola-mundo.
+Sin desactivarlo no se puede ejecutar nada de lo que compilemos. Desactivarlo es
+irreversible sin reinstalar Windows, así que es decisión del usuario, no de
+Claude. Mientras esté activo, Claude puede compilar pero no ejecutar: la salida
+la aporta el usuario.
 
 ## Convenciones
 
 - Documentación y comentarios en español.
 - Identificadores y nombres de fichero en inglés.
+- **Todo literal con acentos que acabe en un `juce::String` lleva el sufijo
+  `_u8`** (ver `Utf8.h`). `juce::String (const char*)` construye con
+  `CharPointer_ASCII`: interpreta byte a byte como Latin-1 y un texto UTF-8 sale
+  doblemente codificado por consola. No hay aviso del compilador; sólo se ve en
+  la salida.
 - `core/` se testea sin hardware. Las sesiones grabadas reales se guardan como
   fixtures en `tests/` — son el mejor material de test que tiene el proyecto.

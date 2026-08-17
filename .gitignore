@@ -20,6 +20,12 @@ assets/samples/
 settings.json
 sessions/
 
+# Informes de audio_probe (--out). Son de esta máquina, no del proyecto:
+# lo que merece conservarse se resume en CLAUDE.md.
+informe*.txt
+jitter*.txt
+dropouts*.txt
+
 # Visual Studio / IDE
 .vs/
 .vscode/
