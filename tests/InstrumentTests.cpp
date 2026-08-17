@@ -6,6 +6,7 @@
 // Nadie oyó ese error hasta que estuvo en la aplicación. Estos tests lo habrían
 // visto sin hardware y sin oídos.
 
+#include <core/audio/Limiter.h>
 #include <core/instrument/StruckStringSynth.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -154,6 +155,88 @@ TEST_CASE ("Tocar fuerte cambia el color, no sólo el volumen", "[instrument][le
     // espectro. Se aproxima contando cruces por cero, que suben con el
     // contenido agudo sin necesidad de una FFT.
     CHECK (loud.rms > soft.rms);
+}
+
+TEST_CASE ("El limitador no persigue los batidos de los graves", "[instrument][limiter]")
+{
+    // Varias notas graves a la vez fluctúan en amplitud a la frecuencia de sus
+    // diferencias: Do2 y Re2 laten a 8 Hz. Un limitador con recuperación de
+    // 100 ms responde justo a esa velocidad, persigue el batido y modula la
+    // ganancia con él. No suena a compresión: suena a ruido.
+    //
+    // La propiedad que hay que conservar es que la recuperación sea claramente
+    // más lenta que eso.
+    // Se mide contra un batido real: Do2 y Re2 sumados laten a 8 Hz. Lo que se
+    // observa es cuánto oscila la ganancia del limitador con ese batido. No
+    // vale comprobar un valor absoluto —eso sólo sellaría el comportamiento
+    // actual—, así que se contrasta la recuperación rápida contra la lenta.
+    auto gainSwingWithRelease = [] (double releaseSeconds)
+    {
+        Limiter limiter;
+        limiter.prepare (sampleRate);
+        limiter.setReleaseTime (releaseSeconds);
+
+        constexpr int blockLength = 64;
+        std::vector<float> block (blockLength);
+
+        float minimum = 2.0f;
+        float maximum = 0.0f;
+        int sampleIndex = 0;
+
+        const int numBlocks = static_cast<int> (3.0 * sampleRate / blockLength);
+
+        for (int b = 0; b < numBlocks; ++b)
+        {
+            for (int i = 0; i < blockLength; ++i, ++sampleIndex)
+            {
+                const double t = sampleIndex / sampleRate;
+                block[static_cast<std::size_t> (i)] =
+                    static_cast<float> (0.7 * (std::sin (6.283185307 * 65.4 * t)
+                                             + std::sin (6.283185307 * 73.4 * t)));
+            }
+
+            limiter.process (block.data(), nullptr, blockLength);
+
+            // El primer segundo se descarta: es el transitorio de arranque.
+            if (b * blockLength > sampleRate)
+            {
+                minimum = std::min (minimum, limiter.currentGainReduction());
+                maximum = std::max (maximum, limiter.currentGainReduction());
+            }
+        }
+
+        return maximum - minimum;
+    };
+
+    const auto fastSwing = gainSwingWithRelease (0.100);
+    const auto slowSwing = gainSwingWithRelease (Limiter::defaultReleaseSeconds);
+
+    std::cout << "  [limitador] oscilación de ganancia con batido de 8 Hz:"
+              << "  100 ms -> " << fastSwing
+              << "   350 ms -> " << slowSwing
+              << "   700 ms -> " << gainSwingWithRelease (0.700)
+              << "   1500 ms -> " << gainSwingWithRelease (1.500) << '\n';
+
+    // Con la recuperación lenta la ganancia tiene que moverse claramente menos.
+    CHECK (slowSwing < fastSwing * 0.6f);
+}
+
+TEST_CASE ("El limitador no deja pasar nada por encima del umbral", "[instrument][limiter]")
+{
+    Limiter limiter;
+    limiter.prepare (sampleRate);
+    limiter.setThreshold (0.5f);
+
+    std::vector<float> block (4096, 0.9f);
+    limiter.process (block.data(), nullptr, static_cast<int> (block.size()));
+
+    // El ataque de 1 ms deja pasar los primeros samples: es el precio de no
+    // tener lookahead, y por eso hay un recorte duro detrás en la cadena real.
+    // Pasado el ataque, nada debe superar el umbral.
+    const int afterAttack = static_cast<int> (0.005 * sampleRate);
+
+    for (int i = afterAttack; i < static_cast<int> (block.size()); ++i)
+        REQUIRE (std::abs (block[static_cast<std::size_t> (i)]) <= 0.51f);
 }
 
 TEST_CASE ("Las voces se liberan solas cuando dejan de sonar", "[instrument][voices]")

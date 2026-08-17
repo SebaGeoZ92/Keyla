@@ -274,6 +274,12 @@ void StruckStringSynth::noteOn (int pitch, int velocity) noexcept
     // Tocar fuerte añade armónicos. Suave: los parciales altos casi no suenan.
     const double brightness = 0.6 + 1.9 * velocityNorm;
 
+    // Y en el registro grave el fundamental pesa más. Sin esto, seis notas
+    // bajas a la vez meten más de cien parciales fuertes en un puñado de
+    // octavas y lo que sale es aspereza, no acorde. Como la energía se
+    // normaliza abajo, esto cambia el color pero no el volumen.
+    const double bassRolloff = 0.45 * (1.0 - std::clamp ((pitch - 21) / 66.0, 0.0, 1.0));
+
     // El golpe del martillo. Nivel contenido y filtrado paso bajo: sin el
     // filtro esto se oye como un clic digital, que es exactamente la queja que
     // provocó la primera versión. Un martillo de fieltro sobre una cuerda no
@@ -307,7 +313,7 @@ void StruckStringSynth::noteOn (int pitch, int velocity) noexcept
             break;
 
         voice->phaseInc[static_cast<std::size_t> (p)] = twoPi * frequency / sampleRate;
-        voice->level[static_cast<std::size_t> (p)] = std::pow (1.0 / n, 3.0 - brightness);
+        voice->level[static_cast<std::size_t> (p)] = std::pow (1.0 / n, 3.0 - brightness + bassRolloff);
 
         // Fase inicial repartida, no cero. Con todos los parciales arrancando
         // alineados se suman en fase el primer instante y producen un pico que

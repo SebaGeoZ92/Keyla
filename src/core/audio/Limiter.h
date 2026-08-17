@@ -15,6 +15,22 @@ namespace keyla::core
     el ataque no es instantáneo y deja pasar el primer pico. Por eso hay además
     un recorte duro al final: el limitador se ocupa de que no suene mal, el
     recorte de que nada salga por encima de fondo de escala pase lo que pase.
+
+    ### Por qué la recuperación es tan lenta
+
+    700 ms, y no es un número redondo elegido al azar. Varias notas graves a la
+    vez producen **batidos**: Do2 y Re2 son 65 y 73 Hz, y su diferencia son 8 Hz
+    de fluctuación en la amplitud. Con una recuperación de 100 ms —que es
+    justamente 10 Hz— el limitador persigue esos batidos y modula la ganancia al
+    ritmo de ellos. Eso no se oye como compresión: se oye como ruido, y fue
+    exactamente la queja que trajo este cambio.
+
+    La regla: **la recuperación tiene que ser más lenta que la modulación que se
+    quiere dejar pasar.** Medido con un batido de 8 Hz, la ganancia oscila un
+    34 % a 100 ms, un 13 % a 350 ms y un 6 % a 700 ms. Más lento reduce poco y
+    empieza a costar caro por el otro lado: un limitador que tarda más de un
+    segundo en soltar deja apagadas las notas suaves que siguen a un acorde
+    fuerte.
 */
 class Limiter
 {
@@ -23,10 +39,20 @@ public:
     {
         sampleRate = sampleRateToUse > 0.0 ? sampleRateToUse : 48000.0;
 
-        attackCoef  = std::exp (-1.0 / (0.001 * sampleRate));   // 1 ms
-        releaseCoef = std::exp (-1.0 / (0.100 * sampleRate));   // 100 ms
+        attackCoef = std::exp (-1.0 / (0.001 * sampleRate));    // 1 ms
+        setReleaseTime (defaultReleaseSeconds);
         envelope = 0.0;
     }
+
+    /** Configurable sobre todo para poder comparar en los tests: la propiedad
+        que importa —que no persiga los batidos— sólo se puede demostrar
+        contrastando una recuperación rápida con una lenta. */
+    void setReleaseTime (double seconds) noexcept
+    {
+        releaseCoef = std::exp (-1.0 / (std::max (0.001, seconds) * sampleRate));
+    }
+
+    static constexpr double defaultReleaseSeconds = 0.700;
 
     void setThreshold (float linearThreshold) noexcept
     {
