@@ -57,11 +57,13 @@ private:
     juce::ComboBox audioDeviceBox, midiDeviceBox, bufferSizeBox, instrumentBox;
     juce::ToggleButton exclusiveToggle { "Modo exclusivo (menos latencia)" };
     juce::Slider reverbSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
-    juce::Label reverbLabel, statusLabel, messageLabel;
+    juce::Slider volumeSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
+    juce::Label reverbLabel, volumeLabel, statusLabel, messageLabel;
     juce::TextButton panicButton { "Silencio" };
 
     juce::String pendingMessage;
     bool messageIsError { false };
+    float shownVolume { -1.0f };        // para no pelearse con el mando del teclado
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

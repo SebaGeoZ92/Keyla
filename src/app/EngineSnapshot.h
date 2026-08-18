@@ -37,6 +37,16 @@ struct EngineSnapshot
     int sustainValue { 0 };
     std::uint64_t noteOnCount { 0 };
 
+    /** Volumen general, 0..1. Lo mueve tanto el mando de la ventana como el
+        control del propio teclado, y por eso viaja en el snapshot: la UI tiene
+        que enterarse de los cambios que no ha hecho ella. */
+    float masterVolume { 1.0f };
+
+    /** Último control continuo recibido, para saber qué manda cada teclado sin
+        tener que adivinarlo. -1 si todavía no ha llegado ninguno. */
+    int lastControllerNumber { -1 };
+    int lastControllerValue { 0 };
+
     /** Máscaras de 128 bits, una por nota MIDI. Dos `uint64` en vez de un
         array de bool: cabe en el snapshot sin coste y la UI lo lee de un
         vistazo. `sounding` incluye lo que retiene el pedal aunque la tecla esté

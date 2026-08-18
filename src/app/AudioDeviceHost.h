@@ -96,6 +96,30 @@ public:
     void setReverbMix (float mix) noexcept;
     float reverbMix() const noexcept { return targetReverbMix.load (std::memory_order_relaxed); }
 
+    // ── Volumen general ─────────────────────────────────────────────────────
+    //
+    // Va **después** del limitador a propósito. Si fuese antes, bajar el volumen
+    // dejaría de limitar y el instrumento cambiaría de carácter al bajarlo; y al
+    // revés, subirlo haría saltar el recorte. Con el limitador delante, la
+    // protección auditiva es la misma a cualquier volumen.
+
+    /** 0..1. La mueven el mando de la ventana y el control del teclado. */
+    void setMasterVolume (float volume) noexcept;
+    float masterVolume() const noexcept { return targetVolume.load (std::memory_order_relaxed); }
+
+    /** Número de CC que el teclado usa como volumen. 7 es el estándar, pero no
+        todos los controladores lo respetan; por eso el snapshot publica el
+        último CC recibido y esto se puede reasignar sin recompilar. */
+    void setVolumeControllerNumber (int cc) noexcept
+    {
+        volumeController.store (juce::jlimit (0, 127, cc), std::memory_order_relaxed);
+    }
+
+    int volumeControllerNumber() const noexcept
+    {
+        return volumeController.load (std::memory_order_relaxed);
+    }
+
     // ── Entrada MIDI (la llama MidiInputHost, desde el hilo del driver) ─────
 
     /** Empuja un mensaje con el instante en que llegó, medido con el reloj de
@@ -148,6 +172,12 @@ private:
     juce::AudioBuffer<float> reverbScratch;
     std::atomic<float> targetReverbMix { 0.0f };
     float currentReverbMix { 0.0f };
+
+    std::atomic<float> targetVolume { 0.8f };
+    std::atomic<int> volumeController { 7 };        // CC7 = Volume, el estándar
+    float currentVolume { 0.8f };
+    std::atomic<int> lastController { -1 };
+    std::atomic<int> lastControllerValue { 0 };
 
     core::LockFreeQueue<IncomingMidi, 1024> midiFifo;
     std::array<core::StampedMidiEvent, maxEventsPerBlock> eventScratch {};

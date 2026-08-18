@@ -263,6 +263,11 @@ void AudioDeviceHost::setReverbMix (float mix) noexcept
     targetReverbMix.store (juce::jlimit (0.0f, 1.0f, mix), std::memory_order_relaxed);
 }
 
+void AudioDeviceHost::setMasterVolume (float volume) noexcept
+{
+    targetVolume.store (juce::jlimit (0.0f, 1.0f, volume), std::memory_order_relaxed);
+}
+
 void AudioDeviceHost::resetHealthCounters() noexcept
 {
     // Lo leen y escriben hilos distintos, pero son contadores de diagnóstico:
@@ -312,6 +317,7 @@ void AudioDeviceHost::audioDeviceAboutToStart (juce::AudioIODevice* startingDevi
 
     reverbScratch.setSize (2, juce::jmax (blockSize, 1), false, true, false);
     currentReverbMix = targetReverbMix.load (std::memory_order_relaxed);
+    currentVolume = targetVolume.load (std::memory_order_relaxed);
 
     if (auto* current = instrument.load (std::memory_order_acquire))
         current->prepare (rate, blockSize);
@@ -398,6 +404,21 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
 
         if (incoming.message.isNoteOn())
             ++noteOnCount;
+
+        if (incoming.message.isController())
+        {
+            const int number = incoming.message.controllerNumber();
+            const int value = incoming.message.controllerValue();
+
+            // Se publica siempre el último recibido: sin esto, averiguar qué
+            // manda el mando de un teclado concreto es adivinar.
+            lastController.store (number, std::memory_order_relaxed);
+            lastControllerValue.store (value, std::memory_order_relaxed);
+
+            if (number == volumeController.load (std::memory_order_relaxed))
+                targetVolume.store (static_cast<float> (value) / 127.0f,
+                                    std::memory_order_relaxed);
+        }
     }
 
     // ── Síntesis ────────────────────────────────────────────────────────────
@@ -446,18 +467,30 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
 
         limiter.process (left, right, numSamples);
 
+        // ── Volumen general, después del limitador ──────────────────────────
+        //
+        // Se interpola dentro del bloque en vez de saltar de golpe: el mando
+        // del teclado manda saltos de 1/127 y a 3 ms por bloque eso se oye como
+        // una escalerilla.
+        const float wantedVolume = targetVolume.load (std::memory_order_relaxed);
+        const float volumeStep = (wantedVolume - currentVolume) / static_cast<float> (numSamples);
+
         // Red de seguridad tras el limitador: pase lo que pase, nada sale por
         // encima de fondo de escala hacia unos auriculares.
         float blockPeak = 0.0f;
 
         for (int i = 0; i < numSamples; ++i)
         {
-            left[i] = juce::jlimit (-1.0f, 1.0f, left[i]);
+            currentVolume += volumeStep;
+
+            left[i] = juce::jlimit (-1.0f, 1.0f, left[i] * currentVolume);
             blockPeak = std::max (blockPeak, std::abs (left[i]));
 
             if (right != nullptr)
-                right[i] = juce::jlimit (-1.0f, 1.0f, right[i]);
+                right[i] = juce::jlimit (-1.0f, 1.0f, right[i] * currentVolume);
         }
+
+        currentVolume = wantedVolume;
 
         peakLevel = std::max (blockPeak, peakLevel * 0.92f);   // caída suave del medidor
 
@@ -501,6 +534,10 @@ void AudioDeviceHost::publishSnapshot (int numSamples, double) noexcept
 
     auto* current = instrument.load (std::memory_order_acquire);
     snapshot.activeVoices = current != nullptr ? current->activeVoiceCount() : 0;
+    snapshot.masterVolume = targetVolume.load (std::memory_order_relaxed);
+    snapshot.lastControllerNumber = lastController.load (std::memory_order_relaxed);
+    snapshot.lastControllerValue = lastControllerValue.load (std::memory_order_relaxed);
+
     snapshot.numKeysDown = keyboard.numKeysDown();
     snapshot.sustainValue = keyboard.sustainPedalValue();
     snapshot.noteOnCount = noteOnCount;

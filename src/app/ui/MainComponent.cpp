@@ -54,6 +54,8 @@ MainComponent::MainComponent()
     addAndMakeVisible (instrumentBox);
     addAndMakeVisible (reverbSlider);
     addAndMakeVisible (reverbLabel);
+    addAndMakeVisible (volumeSlider);
+    addAndMakeVisible (volumeLabel);
 
     for (auto id : { core::InstrumentId::piano, core::InstrumentId::electricPiano,
                      core::InstrumentId::organ, core::InstrumentId::accordion,
@@ -78,6 +80,17 @@ MainComponent::MainComponent()
     reverbSlider.onValueChange = [this]
     {
         audioHost.setReverbMix (static_cast<float> (reverbSlider.getValue()));
+    };
+
+    volumeLabel.setText ("Volumen", juce::dontSendNotification);
+    volumeLabel.setFont (juce::FontOptions (13.0f));
+    volumeLabel.setColour (juce::Label::textColourId, juce::Colour { 0xff9aa2ad });
+
+    volumeSlider.setRange (0.0, 1.0, 0.01);
+    volumeSlider.setValue (audioHost.masterVolume(), juce::dontSendNotification);
+    volumeSlider.onValueChange = [this]
+    {
+        audioHost.setMasterVolume (static_cast<float> (volumeSlider.getValue()));
     };
     addAndMakeVisible (keyboardView);
     addAndMakeVisible (nowPlayingView);
@@ -293,6 +306,16 @@ void MainComponent::timerCallback()
     keyboardView.updateFrom (snapshot);
     nowPlayingView.updateFrom (snapshot);
 
+    // El volumen se puede mover desde el teclado, así que el mando de la
+    // ventana lo sigue. Con dontSendNotification: si se reenviara al motor, el
+    // redondeo del mando pelearía contra los saltos de 1/127 del CC y el
+    // volumen temblaría solo.
+    if (std::abs (snapshot.masterVolume - shownVolume) > 0.004f)
+    {
+        shownVolume = snapshot.masterVolume;
+        volumeSlider.setValue (snapshot.masterVolume, juce::dontSendNotification);
+    }
+
     if (pendingMessage.isNotEmpty())
     {
         messageLabel.setText (pendingMessage, juce::dontSendNotification);
@@ -322,6 +345,14 @@ void MainComponent::timerCallback()
 
     if (snapshot.sustainValue >= core::sustainPedalThreshold)
         status << separator << "PEDAL";
+
+    status << separator << "vol " << juce::String (juce::roundToInt (snapshot.masterVolume * 100.0f)) << " %";
+
+    // Qué control continuo mandó el teclado por última vez. Sirve para saber
+    // qué CC usa cada controlador sin tener que buscarlo en el manual.
+    if (snapshot.lastControllerNumber >= 0)
+        status << separator << "CC" << juce::String (snapshot.lastControllerNumber)
+               << "=" << juce::String (snapshot.lastControllerValue);
 
     if (snapshot.midiRejected > 0)
         status << separator << "MIDI PERDIDO " << juce::String (snapshot.midiRejected);
@@ -356,8 +387,11 @@ void MainComponent::resized()
     secondRow.removeFromLeft (20);
     instrumentBox.setBounds (secondRow.removeFromLeft (180));
     secondRow.removeFromLeft (12);
+    volumeLabel.setBounds (secondRow.removeFromLeft (62));
+    volumeSlider.setBounds (secondRow.removeFromLeft (150));
+    secondRow.removeFromLeft (12);
     reverbLabel.setBounds (secondRow.removeFromLeft (40));
-    reverbSlider.setBounds (secondRow.removeFromLeft (140));
+    reverbSlider.setBounds (secondRow.removeFromLeft (130));
 
     area.removeFromTop (10);
     messageLabel.setBounds (area.removeFromTop (22));
