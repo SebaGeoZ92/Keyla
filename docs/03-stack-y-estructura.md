@@ -44,8 +44,15 @@ framework tocaría la carcasa, no el producto.
 
 ### Licencia
 
-JUCE es GPLv3 o licencia comercial, con un tier gratuito sujeto a umbral de
-facturación. **Verifica los términos vigentes antes de distribuir.** Para uso
+JUCE 8 es **AGPLv3** o licencia comercial — comprobado en `LICENSE.md` del
+propio JUCE, no GPLv3 como decía la primera versión de este documento. La
+diferencia importa: la AGPL extiende la obligación de publicar el código al uso
+en red, y es más contagiosa que la GPL.
+
+Para uso personal, sin distribuir, no se dispara ninguna obligación. En cuanto
+el binario sale a otro ordenador que no sea tuyo, o hay que publicar el código
+bajo AGPLv3, o hace falta la licencia comercial. **Verifica los términos
+vigentes antes de distribuir.** Para uso
 personal y aprendizaje no hay problema. Si en el futuro quieres cerrar el código
 y no cumples el tier gratuito, el escape es la fila 2 de la tabla — y por eso
 `core/` se mantiene limpio.

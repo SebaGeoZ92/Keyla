@@ -2,6 +2,7 @@
 
 #include "../AudioDeviceHost.h"
 #include "../MidiInputHost.h"
+#include "../SettingsStore.h"
 #include "NowPlayingView.h"
 #include "PianoKeyboardView.h"
 
@@ -38,6 +39,7 @@ private:
     void showMessage (const juce::String& text, bool isError);
     void sendNote (int note, int velocity, bool on);
     void selectInstrument (core::InstrumentId id);
+    void saveSettings();
 
     // ── Dominio de tiempo real ──────────────────────────────────────────────
     //
@@ -60,6 +62,12 @@ private:
     juce::Slider volumeSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::Label reverbLabel, volumeLabel, statusLabel, messageLabel;
     juce::TextButton panicButton { "Silencio" };
+    juce::TextButton learnButton { "Aprender" };
+
+    /** Ajustes recordados entre sesiones. Se llama `prefs` y no `settings`
+        porque AudioDeviceHost::Settings ya ocupa ese nombre y confundirlos
+        sería una tarde perdida. */
+    Settings prefs;
 
     juce::String pendingMessage;
     bool messageIsError { false };

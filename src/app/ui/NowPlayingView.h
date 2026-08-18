@@ -32,6 +32,12 @@ private:
     std::uint64_t lastSounding[2] { 0, 0 };
     bool hasContent { false };
 
+    /** Cuando se sueltan todas las teclas, el texto **se queda**. Tocando no da
+        tiempo a mirar la pantalla: para cuando levantas la vista ya has soltado
+        y, si se borrara, nunca llegarías a leer lo que acabas de tocar. Se
+        atenúa para que se distinga de lo que suena ahora mismo. */
+    bool holdingLast { false };
+
     juce::String headline;      // "Do mayor"  ·  "C4"
     juce::String detail;        // cifrado, intervalo, notas sueltas
 

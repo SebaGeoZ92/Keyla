@@ -11,6 +11,7 @@ juce_add_gui_app(keyla
 target_sources(keyla PRIVATE
         Main.cpp
         AudioDeviceHost.cpp
+        SettingsStore.cpp
         MidiInputHost.cpp
         ui/MainComponent.cpp
         ui/NowPlayingView.cpp

@@ -42,9 +42,13 @@ namespace
 
 MainComponent::MainComponent()
 {
-    instrument = core::createInstrument (core::InstrumentId::piano);
+    prefs = Settings::load();
+
+    instrument = core::createInstrument (prefs.instrument);
     audioHost.setInstrument (instrument.get());
-    audioHost.setReverbMix (core::defaultReverbFor (core::InstrumentId::piano));
+    audioHost.setReverbMix (prefs.reverbMix);
+    audioHost.setMasterVolume (prefs.masterVolume);
+    audioHost.setVolumeControllerNumber (prefs.volumeController);
 
     // ── Controles ───────────────────────────────────────────────────────────
     addAndMakeVisible (audioDeviceBox);
@@ -56,13 +60,14 @@ MainComponent::MainComponent()
     addAndMakeVisible (reverbLabel);
     addAndMakeVisible (volumeSlider);
     addAndMakeVisible (volumeLabel);
+    addAndMakeVisible (learnButton);
 
     for (auto id : { core::InstrumentId::piano, core::InstrumentId::electricPiano,
                      core::InstrumentId::organ, core::InstrumentId::accordion,
                      core::InstrumentId::strings, core::InstrumentId::vibraphone })
         instrumentBox.addItem (core::instrumentName (id), static_cast<int> (id) + 1);
 
-    instrumentBox.setSelectedId (static_cast<int> (core::InstrumentId::piano) + 1,
+    instrumentBox.setSelectedId (static_cast<int> (prefs.instrument) + 1,
                                  juce::dontSendNotification);
 
     instrumentBox.onChange = [this]
@@ -75,11 +80,11 @@ MainComponent::MainComponent()
     reverbLabel.setColour (juce::Label::textColourId, juce::Colour { 0xff9aa2ad });
 
     reverbSlider.setRange (0.0, 1.0, 0.01);
-    reverbSlider.setValue (core::defaultReverbFor (core::InstrumentId::piano),
-                           juce::dontSendNotification);
+    reverbSlider.setValue (prefs.reverbMix, juce::dontSendNotification);
     reverbSlider.onValueChange = [this]
     {
         audioHost.setReverbMix (static_cast<float> (reverbSlider.getValue()));
+        prefs.reverbMix = static_cast<float> (reverbSlider.getValue());
     };
 
     volumeLabel.setText ("Volumen", juce::dontSendNotification);
@@ -87,10 +92,28 @@ MainComponent::MainComponent()
     volumeLabel.setColour (juce::Label::textColourId, juce::Colour { 0xff9aa2ad });
 
     volumeSlider.setRange (0.0, 1.0, 0.01);
-    volumeSlider.setValue (audioHost.masterVolume(), juce::dontSendNotification);
+    volumeSlider.setValue (prefs.masterVolume, juce::dontSendNotification);
     volumeSlider.onValueChange = [this]
     {
         audioHost.setMasterVolume (static_cast<float> (volumeSlider.getValue()));
+        prefs.masterVolume = static_cast<float> (volumeSlider.getValue());
+    };
+
+    // Aprender el mando del teclado en vez de suponer que manda CC7: hay
+    // controladores cuyo control de volumen no manda MIDI en absoluto, y otros
+    // que usan un número distinto. Preguntárselo al teclado es lo único fiable.
+    learnButton.onClick = [this]
+    {
+        if (audioHost.isLearningVolumeController())
+        {
+            audioHost.cancelLearn();
+            showMessage ("Aprendizaje cancelado.", false);
+        }
+        else
+        {
+            audioHost.learnVolumeController();
+            showMessage ("Mueve ahora el mando del teclado que quieras usar como volumen."_u8, false);
+        }
     };
     addAndMakeVisible (keyboardView);
     addAndMakeVisible (nowPlayingView);
@@ -98,7 +121,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (messageLabel);
     addAndMakeVisible (panicButton);
 
-    exclusiveToggle.setToggleState (true, juce::dontSendNotification);
+    exclusiveToggle.setToggleState (prefs.exclusive, juce::dontSendNotification);
     exclusiveToggle.onClick = [this]
     {
         rebuildAudioDeviceList();
@@ -111,7 +134,8 @@ MainComponent::MainComponent()
     midiDeviceBox.onChange = [this]
     {
         const auto name = midiDeviceBox.getText();
-        midiHost.useDevice (name == "(ninguna)" ? juce::String() : name);
+        prefs.midiInputName = name == "(ninguna)" ? juce::String() : name;
+        midiHost.useDevice (prefs.midiInputName);
     };
 
     midiHost.onConnectionChanged = [this]
@@ -144,6 +168,7 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent()
 {
     stopTimer();
+    saveSettings();
     midiHost.useDevice ({});
     audioHost.close();          // para el stream antes de soltar el instrumento
     audioHost.setInstrument (nullptr);
@@ -155,7 +180,10 @@ MainComponent::~MainComponent()
 
 void MainComponent::rebuildAudioDeviceList()
 {
-    const auto previous = audioDeviceBox.getText();
+    // Lo guardado manda sobre lo que hubiera en el desplegable: al arrancar el
+    // desplegable está vacío y es justo cuando hay que recuperar la elección.
+    const auto previous = audioDeviceBox.getText().isNotEmpty() ? audioDeviceBox.getText()
+                                                                : prefs.audioOutputName;
     const auto exclusive = exclusiveToggle.getToggleState();
 
     audioDeviceBox.clear (juce::dontSendNotification);
@@ -191,7 +219,8 @@ void MainComponent::rebuildAudioDeviceList()
 
 void MainComponent::rebuildMidiDeviceList()
 {
-    const auto previous = midiDeviceBox.getText();
+    const auto previous = midiDeviceBox.getText().isNotEmpty() ? midiDeviceBox.getText()
+                                                              : prefs.midiInputName;
 
     midiDeviceBox.clear (juce::dontSendNotification);
     midiDeviceBox.addItem ("(ninguna)", 1);
@@ -230,7 +259,8 @@ void MainComponent::openSelectedAudioDevice()
     settings.outputDeviceName = audioDeviceBox.getText();
     settings.exclusive = exclusiveToggle.getToggleState();
     settings.sampleRate = 48000.0;
-    settings.bufferSize = bufferSizeBox.getSelectedId() > 0 ? bufferSizeBox.getSelectedId() : 128;
+    settings.bufferSize = bufferSizeBox.getSelectedId() > 0 ? bufferSizeBox.getSelectedId()
+                                                            : prefs.bufferSize;
 
     const auto error = audioHost.open (settings);
 
@@ -244,6 +274,10 @@ void MainComponent::openSelectedAudioDevice()
     // Los tamaños de buffer sólo se conocen con el dispositivo abierto.
     const auto current = audioHost.currentSettings();
     const auto sizes = audioHost.availableBufferSizes();
+
+    prefs.audioOutputName = current.outputDeviceName;
+    prefs.bufferSize = current.bufferSize;
+    prefs.exclusive = current.exclusive;
 
     bufferSizeBox.clear (juce::dontSendNotification);
 
@@ -279,6 +313,13 @@ void MainComponent::sendNote (int note, int velocity, bool on)
     audioHost.pushMidiMessage (on ? makeNoteOn (note, velocity) : makeNoteOff (note));
 }
 
+void MainComponent::saveSettings()
+{
+    prefs.volumeController = audioHost.volumeControllerNumber();
+    prefs.masterVolume = audioHost.masterVolume();
+    prefs.save();
+}
+
 void MainComponent::selectInstrument (core::InstrumentId id)
 {
     auto replacement = core::createInstrument (id);
@@ -293,6 +334,7 @@ void MainComponent::selectInstrument (core::InstrumentId id)
     audioHost.swapInstrument (instrument.get());
 
     reverbSlider.setValue (core::defaultReverbFor (id), juce::sendNotificationSync);
+    prefs.instrument = id;
 
     showMessage (core::instrumentName (id), false);
 }
@@ -388,7 +430,9 @@ void MainComponent::resized()
     instrumentBox.setBounds (secondRow.removeFromLeft (180));
     secondRow.removeFromLeft (12);
     volumeLabel.setBounds (secondRow.removeFromLeft (62));
-    volumeSlider.setBounds (secondRow.removeFromLeft (150));
+    volumeSlider.setBounds (secondRow.removeFromLeft (130));
+    secondRow.removeFromLeft (6);
+    learnButton.setBounds (secondRow.removeFromLeft (86));
     secondRow.removeFromLeft (12);
     reverbLabel.setBounds (secondRow.removeFromLeft (40));
     reverbSlider.setBounds (secondRow.removeFromLeft (130));

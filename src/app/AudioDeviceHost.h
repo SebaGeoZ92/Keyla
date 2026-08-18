@@ -120,6 +120,13 @@ public:
         return volumeController.load (std::memory_order_relaxed);
     }
 
+    /** Aprende el mando: el siguiente control continuo que llegue pasa a ser el
+        de volumen. Es la única forma honesta de que esto funcione con cualquier
+        teclado — CC7 es el estándar y hay controladores que lo ignoran. */
+    void learnVolumeController() noexcept { learningVolume.store (true, std::memory_order_relaxed); }
+    void cancelLearn() noexcept { learningVolume.store (false, std::memory_order_relaxed); }
+    bool isLearningVolumeController() const noexcept { return learningVolume.load (std::memory_order_relaxed); }
+
     // ── Entrada MIDI (la llama MidiInputHost, desde el hilo del driver) ─────
 
     /** Empuja un mensaje con el instante en que llegó, medido con el reloj de
@@ -178,6 +185,7 @@ private:
     float currentVolume { 0.8f };
     std::atomic<int> lastController { -1 };
     std::atomic<int> lastControllerValue { 0 };
+    std::atomic<bool> learningVolume { false };
 
     core::LockFreeQueue<IncomingMidi, 1024> midiFifo;
     std::array<core::StampedMidiEvent, maxEventsPerBlock> eventScratch {};

@@ -415,6 +415,16 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
             lastController.store (number, std::memory_order_relaxed);
             lastControllerValue.store (value, std::memory_order_relaxed);
 
+            // Modo aprender: el primer control que se mueva se queda con el
+            // volumen. Se ignora CC64, que es el pedal, y CC123, que es el
+            // pánico: asignarles el volumen sería una trampa cruel.
+            if (learningVolume.load (std::memory_order_relaxed)
+                && number != 64 && number < 120)
+            {
+                volumeController.store (number, std::memory_order_relaxed);
+                learningVolume.store (false, std::memory_order_relaxed);
+            }
+
             if (number == volumeController.load (std::memory_order_relaxed))
                 targetVolume.store (static_cast<float> (value) / 127.0f,
                                     std::memory_order_relaxed);

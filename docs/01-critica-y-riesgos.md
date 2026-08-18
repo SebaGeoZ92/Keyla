@@ -207,8 +207,9 @@ Riesgos secundarios pero reales:
 - **Repertorio**: casi todo lo que quieras tocar está bajo copyright. El
   currículum propio (escalas, arpegios, ejercicios) y el dominio público son el
   camino.
-- **Licencia de JUCE**: GPLv3 o licencia comercial, con un tier gratuito sujeto a
-  umbral de facturación. Verifica los términos vigentes antes de distribuir.
+- **Licencia de JUCE**: AGPLv3 o licencia comercial (ver doc 03 §1 — la primera
+  versión de este documento decía GPLv3 y era incorrecto). Verifica los términos
+  vigentes antes de distribuir.
 
 ### 2.4 Riesgo de producto (el más probable)
 

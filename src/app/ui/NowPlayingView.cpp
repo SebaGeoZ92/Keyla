@@ -36,12 +36,18 @@ void NowPlayingView::updateFrom (const EngineSnapshot& snapshot)
 
 void NowPlayingView::rebuildText (const std::vector<int>& notes)
 {
+    if (notes.empty())
+    {
+        // No se borra: se atenúa. Lo último que tocaste sigue leyéndose hasta
+        // que toques otra cosa.
+        holdingLast = hasContent;
+        return;
+    }
+
     headline.clear();
     detail.clear();
-    hasContent = ! notes.empty();
-
-    if (notes.empty())
-        return;
+    hasContent = true;
+    holdingLast = false;
 
     // ── Una nota ────────────────────────────────────────────────────────────
     if (notes.size() == 1)
@@ -95,11 +101,15 @@ void NowPlayingView::paint (juce::Graphics& g)
 
     auto headlineArea = area.removeFromLeft (juce::jmin (area.getWidth(), 340));
 
-    g.setColour (juce::Colour { 0xffe8eaed });
+    // Atenuado si es la lectura de algo que ya soltaste, para que se vea de un
+    // vistazo si suena ahora o es lo anterior.
+    const float alpha = holdingLast ? 0.45f : 1.0f;
+
+    g.setColour (juce::Colour { 0xffe8eaed }.withAlpha (alpha));
     g.setFont (juce::FontOptions (26.0f, juce::Font::bold));
     g.drawText (headline, headlineArea, juce::Justification::centredLeft, false);
 
-    g.setColour (juce::Colour { 0xff8f98a3 });
+    g.setColour (juce::Colour { 0xff8f98a3 }.withAlpha (alpha));
     g.setFont (juce::FontOptions (15.0f));
     g.drawText (detail, area, juce::Justification::centredLeft, false);
 }
