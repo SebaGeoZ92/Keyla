@@ -10,6 +10,11 @@ namespace
     const juce::Colour pressedColour      { 0xff4f9dd9 };
     const juce::Colour pedalColour        { 0xff2c5c7d };
     const juce::Colour outlineColour      { 0xff54585f };
+
+    // Verde para "ve aquí". Distinto del azul de "estás pulsando" a propósito:
+    // si el objetivo y lo tocado compartieran color, el alumno no sabría si ya
+    // ha acertado.
+    const juce::Colour expectedColour     { 0xff5fae5f };
 }
 
 PianoKeyboardView::PianoKeyboardView()
@@ -98,6 +103,21 @@ void PianoKeyboardView::rebuildLayout()
     }
 }
 
+void PianoKeyboardView::setExpectedPitches (const std::vector<int>& pitches)
+{
+    std::uint64_t mask[2] { 0, 0 };
+
+    for (auto pitch : pitches)
+        EngineSnapshot::setBit (mask, pitch);
+
+    if (mask[0] == expected[0] && mask[1] == expected[1])
+        return;
+
+    expected[0] = mask[0];
+    expected[1] = mask[1];
+    repaint();
+}
+
 void PianoKeyboardView::updateFrom (const EngineSnapshot& snapshot)
 {
     if (keysDown[0] == snapshot.keysDown[0] && keysDown[1] == snapshot.keysDown[1]
@@ -120,10 +140,12 @@ void PianoKeyboardView::paint (juce::Graphics& g)
     {
         const bool down = EngineSnapshot::hasBit (keysDown, key.note);
         const bool held = ! down && EngineSnapshot::hasBit (sounding, key.note);
+        const bool wanted = EngineSnapshot::hasBit (expected, key.note);
 
         g.setColour (down ? pressedColour
-                          : held ? pedalColour.brighter (0.7f)
-                                 : whiteKeyColour);
+                          : wanted ? expectedColour
+                                   : held ? pedalColour.brighter (0.7f)
+                                          : whiteKeyColour);
         g.fillRect (key.bounds.reduced (0.5f));
 
         g.setColour (outlineColour);
@@ -144,10 +166,12 @@ void PianoKeyboardView::paint (juce::Graphics& g)
     {
         const bool down = EngineSnapshot::hasBit (keysDown, key.note);
         const bool held = ! down && EngineSnapshot::hasBit (sounding, key.note);
+        const bool wanted = EngineSnapshot::hasBit (expected, key.note);
 
         g.setColour (down ? pressedColour.darker (0.2f)
-                          : held ? pedalColour
-                                 : blackKeyColour);
+                          : wanted ? expectedColour.darker (0.35f)
+                                   : held ? pedalColour
+                                          : blackKeyColour);
         g.fillRoundedRectangle (key.bounds, 2.0f);
 
         g.setColour (juce::Colours::black.withAlpha (0.6f));

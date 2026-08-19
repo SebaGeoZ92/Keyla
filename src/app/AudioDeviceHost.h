@@ -140,6 +140,23 @@ public:
 
     EngineSnapshot snapshot() const { return published.read(); }
 
+    /** Un ataque o una suelta, con su posición exacta de sample.
+
+        El ejercicio necesita **eventos**, no un muestreo del estado a 60 Hz:
+        repetir la misma nota dos veces rápido es indistinguible de mantenerla
+        si sólo se mira quién está pulsado, y en una escala eso pasa cada dos
+        por tres. Por eso hay una FIFO del dominio de tiempo real al de sesión,
+        que es la otra dirección del invariante 4. */
+    struct NoteEvent
+    {
+        int pitch { 0 };
+        int velocity { 0 };
+        bool isOn { false };
+        double exactSample { 0.0 };
+    };
+
+    bool popNoteEvent (NoteEvent& out) noexcept { return noteEvents.pop (out); }
+
     void resetHealthCounters() noexcept;
 
     // ── juce::AudioIODeviceCallback ─────────────────────────────────────────
@@ -188,6 +205,7 @@ private:
     std::atomic<bool> learningVolume { false };
 
     core::LockFreeQueue<IncomingMidi, 1024> midiFifo;
+    core::LockFreeQueue<NoteEvent, 1024> noteEvents;
     std::array<core::StampedMidiEvent, maxEventsPerBlock> eventScratch {};
 
     core::SnapshotPublisher<EngineSnapshot> published;

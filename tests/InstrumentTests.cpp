@@ -301,8 +301,9 @@ TEST_CASE ("El limitador no persigue los batidos de los graves", "[instrument][l
 
     std::cout << "  [limitador] oscilación de ganancia con batido de 8 Hz:"
               << "  100 ms -> " << fastSwing
-              << "   350 ms -> " << slowSwing
-              << "   700 ms -> " << gainSwingWithRelease (0.700)
+              << "   350 ms -> " << gainSwingWithRelease (0.350)
+              << "   " << juce::roundToInt (Limiter::defaultReleaseSeconds * 1000.0)
+              << " ms (el que usa la app) -> " << slowSwing
               << "   1500 ms -> " << gainSwingWithRelease (1.500) << '\n';
 
     // Con la recuperación lenta la ganancia tiene que moverse claramente menos.

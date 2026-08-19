@@ -43,6 +43,11 @@ public:
     void mouseDrag (const juce::MouseEvent& event) override;
     void mouseUp (const juce::MouseEvent& event) override;
 
+    /** Las alturas que el ejercicio espera ahora. Se pintan en otro color para
+        que la mano sepa dónde ir sin tener que leer texto: es lo que conecta la
+        pantalla con las manos (doc 02 §7). Vacío = sin ejercicio. */
+    void setExpectedPitches (const std::vector<int>& pitches);
+
     /** Notas tocadas con el ratón, para poder probar sin teclado enchufado. */
     std::function<void (int note, int velocity)> onNoteOn;
     std::function<void (int note)> onNoteOff;
@@ -66,6 +71,7 @@ private:
 
     std::uint64_t keysDown[2] { 0, 0 };
     std::uint64_t sounding[2] { 0, 0 };
+    std::uint64_t expected[2] { 0, 0 };
     int mouseNote { -1 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PianoKeyboardView)

@@ -5,7 +5,8 @@ add_executable(keyla_tests
         LockFreeQueueTests.cpp
         KeyboardStateTests.cpp
         MusicTests.cpp
-        InstrumentTests.cpp)
+        InstrumentTests.cpp
+        ExerciseTests.cpp)
 
 target_link_libraries(keyla_tests PRIVATE
         keyla_core

@@ -402,6 +402,16 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
 
         keyboard.apply (incoming.message, static_cast<std::uint64_t> (std::llround (exact)));
 
+        if (incoming.message.isNoteOn() || incoming.message.isNoteOff())
+        {
+            NoteEvent note;
+            note.pitch = incoming.message.noteNumber();
+            note.velocity = incoming.message.velocity();
+            note.isOn = incoming.message.isNoteOn();
+            note.exactSample = exact;
+            noteEvents.push (note);
+        }
+
         if (incoming.message.isNoteOn())
             ++noteOnCount;
 

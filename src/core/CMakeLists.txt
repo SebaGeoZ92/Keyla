@@ -24,7 +24,13 @@ add_library(keyla_core STATIC
         music/Pitch.h
         music/Pitch.cpp
         music/ChordRecognizer.h
-        music/ChordRecognizer.cpp)
+        music/ChordRecognizer.cpp
+        score/Exercise.h
+        score/Exercise.cpp
+        score/ExerciseGenerator.h
+        score/ExerciseGenerator.cpp
+        exercise/ExerciseRunner.h
+        exercise/ExerciseRunner.cpp)
 
 target_include_directories(keyla_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 

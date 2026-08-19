@@ -61,6 +61,9 @@ MainComponent::MainComponent()
     addAndMakeVisible (volumeSlider);
     addAndMakeVisible (volumeLabel);
     addAndMakeVisible (learnButton);
+    addAndMakeVisible (exerciseView);
+    addAndMakeVisible (exerciseBox);
+    addAndMakeVisible (exerciseButton);
 
     for (auto id : { core::InstrumentId::piano, core::InstrumentId::electricPiano,
                      core::InstrumentId::organ, core::InstrumentId::accordion,
@@ -148,7 +151,17 @@ MainComponent::MainComponent()
 
     panicButton.onClick = [this] { audioHost.pushMidiMessage (makeAllNotesOff()); };
 
-    keyboardView.setRange (36, 84);
+    rebuildExerciseList();
+
+    exerciseButton.onClick = [this]
+    {
+        if (runner.isRunning())
+            stopExercise();
+        else
+            startSelectedExercise();
+    };
+
+    keyboardView.setRange (keyboardLowest, keyboardHighest);
     keyboardView.onNoteOn = [this] (int note, int velocity) { sendNote (note, velocity, true); };
     keyboardView.onNoteOff = [this] (int note) { sendNote (note, 0, false); };
 
@@ -161,7 +174,7 @@ MainComponent::MainComponent()
     rebuildMidiDeviceList();
     openSelectedAudioDevice();
 
-    setSize (1000, 420);
+    setSize (1040, 560);
     startTimerHz (60);
 }
 
@@ -313,6 +326,102 @@ void MainComponent::sendNote (int note, int velocity, bool on)
     audioHost.pushMidiMessage (on ? makeNoteOn (note, velocity) : makeNoteOff (note));
 }
 
+// ── Ejercicios ──────────────────────────────────────────────────────────────
+
+void MainComponent::rebuildExerciseList()
+{
+    exercises = core::defaultExercises();
+
+    exerciseBox.clear (juce::dontSendNotification);
+
+    for (int i = 0; i < static_cast<int> (exercises.size()); ++i)
+        exerciseBox.addItem (exercises[static_cast<std::size_t> (i)].name, i + 1);
+
+    exerciseBox.setSelectedId (1, juce::dontSendNotification);
+    exerciseView.showIdle();
+}
+
+void MainComponent::startSelectedExercise()
+{
+    const int index = exerciseBox.getSelectedId() - 1;
+
+    if (! juce::isPositiveAndBelow (index, static_cast<int> (exercises.size())))
+        return;
+
+    auto exercise = exercises[static_cast<std::size_t> (index)];
+
+    // El ejercicio se adapta al teclado ANTES de empezar, no durante (doc 01
+    // §1.1). Marcar como falladas unas notas que el alumno no puede alcanzar
+    // fisicamente es de las cosas que hacen desinstalar una aplicacion.
+    const auto fit = core::fitToKeyboardRange (exercise, keyboardLowest, keyboardHighest);
+
+    if (fit.outcome == core::RangeFit::Outcome::doesNotFit)
+    {
+        exerciseView.showRangeMessage (fit.explanation);
+        showMessage (fit.explanation, true);
+        return;
+    }
+
+    exerciseView.showRangeMessage ({});
+
+    if (fit.outcome == core::RangeFit::Outcome::transposed)
+        showMessage (fit.explanation, false);
+    else
+        showMessage (exercise.name, false);
+
+    // Se vacia la cola: las notas que se estuvieran tocando justo antes de
+    // pulsar Empezar no cuentan como el primer intento.
+    AudioDeviceHost::NoteEvent discarded;
+
+    while (audioHost.popNoteEvent (discarded))
+        ;
+
+    runner.start (std::move (exercise), juce::Time::getMillisecondCounterHiRes() * 0.001);
+    exerciseButton.setButtonText ("Parar");
+    exerciseView.refresh (runner);
+}
+
+void MainComponent::stopExercise()
+{
+    runner.stop();
+    exerciseButton.setButtonText ("Empezar");
+    exerciseView.showIdle();
+    keyboardView.setExpectedPitches ({});
+}
+
+void MainComponent::pumpNoteEvents()
+{
+    AudioDeviceHost::NoteEvent note;
+    bool anything = false;
+
+    while (audioHost.popNoteEvent (note))
+    {
+        anything = true;
+
+        if (! runner.isRunning())
+            continue;
+
+        const double seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+
+        if (note.isOn)
+            runner.noteOn (note.pitch, seconds);
+        else
+            runner.noteOff (note.pitch);
+    }
+
+    if (! runner.isRunning() && ! runner.isFinished())
+        return;
+
+    if (anything || runner.isFinished())
+        exerciseView.refresh (runner);
+
+    keyboardView.setExpectedPitches (runner.isFinished() ? std::vector<int> {}
+                                                         : runner.pendingPitches());
+
+    if (runner.isFinished() && exerciseButton.getButtonText() != "Empezar")
+        exerciseButton.setButtonText ("Empezar");
+}
+
 void MainComponent::saveSettings()
 {
     prefs.volumeController = audioHost.volumeControllerNumber();
@@ -347,6 +456,7 @@ void MainComponent::timerCallback()
 
     keyboardView.updateFrom (snapshot);
     nowPlayingView.updateFrom (snapshot);
+    pumpNoteEvents();
 
     // El volumen se puede mover desde el teclado, así que el mando de la
     // ventana lo sigue. Con dontSendNotification: si se reenviara al motor, el
@@ -439,6 +549,16 @@ void MainComponent::resized()
 
     area.removeFromTop (10);
     messageLabel.setBounds (area.removeFromTop (22));
+
+    area.removeFromTop (6);
+
+    auto exerciseRow = area.removeFromTop (26);
+    exerciseBox.setBounds (exerciseRow.removeFromLeft (400));
+    exerciseRow.removeFromLeft (8);
+    exerciseButton.setBounds (exerciseRow.removeFromLeft (100));
+
+    area.removeFromTop (6);
+    exerciseView.setBounds (area.removeFromTop (72));
 
     area.removeFromTop (6);
     nowPlayingView.setBounds (area.removeFromTop (40));

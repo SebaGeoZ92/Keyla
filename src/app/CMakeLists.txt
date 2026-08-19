@@ -14,6 +14,7 @@ target_sources(keyla PRIVATE
         SettingsStore.cpp
         MidiInputHost.cpp
         ui/MainComponent.cpp
+        ui/ExerciseView.cpp
         ui/NowPlayingView.cpp
         ui/PianoKeyboardView.cpp)
 

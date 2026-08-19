@@ -3,10 +3,13 @@
 #include "../AudioDeviceHost.h"
 #include "../MidiInputHost.h"
 #include "../SettingsStore.h"
+#include "ExerciseView.h"
 #include "NowPlayingView.h"
 #include "PianoKeyboardView.h"
 
+#include <core/exercise/ExerciseRunner.h>
 #include <core/instrument/Instruments.h>
+#include <core/score/ExerciseGenerator.h>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -40,6 +43,10 @@ private:
     void sendNote (int note, int velocity, bool on);
     void selectInstrument (core::InstrumentId id);
     void saveSettings();
+    void rebuildExerciseList();
+    void startSelectedExercise();
+    void stopExercise();
+    void pumpNoteEvents();
 
     // ── Dominio de tiempo real ──────────────────────────────────────────────
     //
@@ -55,6 +62,18 @@ private:
     // ── UI ──────────────────────────────────────────────────────────────────
     PianoKeyboardView keyboardView;
     NowPlayingView nowPlayingView;
+    ExerciseView exerciseView;
+
+    // El profesor vive en el dominio de sesión: se alimenta de la FIFO de
+    // eventos del hilo de audio, nunca al revés (doc 02 §1).
+    core::ExerciseRunner runner;
+    std::vector<core::Exercise> exercises;
+
+    /** Rango del teclado en pantalla, que es también el que se supone al
+        alumno. El SE49 son estas 49 teclas. Cuando exista la calibración de
+        controlador, esto lo aprenderá observando lo que se toca (doc 01 §1.1). */
+    static constexpr int keyboardLowest = 36;
+    static constexpr int keyboardHighest = 84;
 
     juce::ComboBox audioDeviceBox, midiDeviceBox, bufferSizeBox, instrumentBox;
     juce::ToggleButton exclusiveToggle { "Modo exclusivo (menos latencia)" };
@@ -63,6 +82,8 @@ private:
     juce::Label reverbLabel, volumeLabel, statusLabel, messageLabel;
     juce::TextButton panicButton { "Silencio" };
     juce::TextButton learnButton { "Aprender" };
+    juce::ComboBox exerciseBox;
+    juce::TextButton exerciseButton { "Empezar" };
 
     /** Ajustes recordados entre sesiones. Se llama `prefs` y no `settings`
         porque AudioDeviceHost::Settings ya ocupa ese nombre y confundirlos

@@ -49,7 +49,20 @@ Dos salvedades que hay que arrastrar:
 `midi_monitor` (fase 0-A del doc 05) no se ha llegado a necesitar: `audio_probe`
 cubre lo que iba a medir. No se escribe hasta que haga falta.
 
-Siguiente paso: **fase 1**, instrumento tocable (doc 05).
+**Fase 1 hecha** salvo grabación y calibrador de loopback: aplicación con seis
+instrumentos, reverberación, teclado iluminado, reconocimiento de acordes,
+volumen general y ajustes persistentes en `%APPDATA%\Keyla`.
+
+**Fase 3 empezada**: modo espera funcionando. Generador de escalas y arpegios,
+máquina de estados que no avanza hasta que aciertas, evaluación de alturas
+—nunca de ritmo, que aquí no existe— y adaptación al rango del teclado.
+
+Se saltó la fase 2 (metrónomo y grabación) a propósito: el modo espera no
+necesita reloj ni grabación, sólo emparejar alturas. La fase 2 hace falta antes
+del **modo tempo**, no antes de éste.
+
+Siguiente paso: fase 2 (metrónomo + grabación) para poder abordar la evaluación
+temporal de la fase 4, que es donde está el valor real del producto.
 
 ## Invariantes de arquitectura
 
