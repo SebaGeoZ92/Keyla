@@ -40,10 +40,24 @@ void ExerciseView::showIdle()
 {
     idle = true;
     finished = false;
+    showingReport = false;
+    reportLines.clear();
     title.clear();
     hint.clear();
     positionText.clear();
     nextText.clear();
+    nudge.clear();
+    repaint();
+}
+
+void ExerciseView::showReport (const juce::String& exerciseName, const juce::StringArray& lines)
+{
+    idle = false;
+    finished = true;
+    showingReport = true;
+    title = exerciseName;
+    reportLines = lines;
+    progress = 1.0;
     nudge.clear();
     repaint();
 }
@@ -65,6 +79,7 @@ void ExerciseView::refresh (const core::ExerciseRunner& runner)
     }
 
     idle = false;
+    showingReport = false;
     title = exercise.name;
     hint = exercise.hint;
 
@@ -152,6 +167,23 @@ void ExerciseView::paint (juce::Graphics& g)
     g.setColour (juce::Colour { 0xff8f98a3 });
     g.setFont (juce::FontOptions (13.0f));
     g.drawText (positionText, titleRow, juce::Justification::centredRight, false);
+
+    // ── El informe, si lo hay ───────────────────────────────────────────────
+    if (showingReport)
+    {
+        g.setColour (juce::Colour { 0xffd6dbe0 });
+        g.setFont (juce::FontOptions (13.5f));
+
+        for (const auto& line : reportLines)
+        {
+            if (area.getHeight() < 16)
+                break;
+
+            g.drawText (line, area.removeFromTop (16), juce::Justification::centredLeft, true);
+        }
+
+        return;
+    }
 
     // ── Lo que toca ahora, o el resumen al terminar ─────────────────────────
     auto mainRow = area.removeFromTop (26);

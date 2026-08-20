@@ -7,7 +7,10 @@
 #include "NowPlayingView.h"
 #include "PianoKeyboardView.h"
 
+#include <core/evaluation/Metrics.h>
+#include <core/evaluation/OfflineAligner.h>
 #include <core/exercise/ExerciseRunner.h>
+#include <core/recording/SessionRecorder.h>
 #include <core/instrument/Instruments.h>
 #include <core/score/ExerciseGenerator.h>
 
@@ -47,6 +50,7 @@ private:
     void startSelectedExercise();
     void stopExercise();
     void pumpNoteEvents();
+    void finishTempoAttempt();
 
     // ── Dominio de tiempo real ──────────────────────────────────────────────
     //
@@ -69,6 +73,16 @@ private:
     core::ExerciseRunner runner;
     std::vector<core::Exercise> exercises;
 
+    /** Modo tempo: el reloj no espera. Se graba todo y al terminar se evalúa
+        de una vez sobre la grabación, que es lo que permite que la evaluación
+        sea una funcion pura y testeable (doc 01 1.8). El modo espera y el modo
+        tempo son **dos evaluadores distintos** y mezclarlos produce el error de
+        reportar errores de ritmo donde el ritmo no existe (doc 02 5). */
+    core::SessionRecorder recorder;
+    core::Exercise tempoExercise;
+    bool tempoMode { false };
+    double tempoStartSample { 0.0 };
+
     /** Rango del teclado en pantalla, que es también el que se supone al
         alumno. El SE49 son estas 49 teclas. Cuando exista la calibración de
         controlador, esto lo aprenderá observando lo que se toca (doc 01 §1.1). */
@@ -82,8 +96,10 @@ private:
     juce::Label reverbLabel, volumeLabel, statusLabel, messageLabel;
     juce::TextButton panicButton { "Silencio" };
     juce::TextButton learnButton { "Aprender" };
-    juce::ComboBox exerciseBox;
+    juce::ComboBox exerciseBox, modeBox;
     juce::TextButton exerciseButton { "Empezar" };
+    juce::ToggleButton metronomeToggle { "Metronomo" };
+    juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
 
     /** Ajustes recordados entre sesiones. Se llama `prefs` y no `settings`
         porque AudioDeviceHost::Settings ya ocupa ese nombre y confundirlos

@@ -263,6 +263,21 @@ void AudioDeviceHost::setReverbMix (float mix) noexcept
     targetReverbMix.store (juce::jlimit (0.0f, 1.0f, mix), std::memory_order_relaxed);
 }
 
+void AudioDeviceHost::setMetronomeEnabled (bool enabled) noexcept
+{
+    metronomeOn.store (enabled, std::memory_order_relaxed);
+}
+
+void AudioDeviceHost::setMetronomeGain (float gain) noexcept
+{
+    metronomeGain.store (juce::jlimit (0.0f, 1.0f, gain), std::memory_order_relaxed);
+}
+
+void AudioDeviceHost::setTempo (double beatsPerMinute) noexcept
+{
+    targetTempo.store (juce::jlimit (20.0, 300.0, beatsPerMinute), std::memory_order_relaxed);
+}
+
 void AudioDeviceHost::setMasterVolume (float volume) noexcept
 {
     targetVolume.store (juce::jlimit (0.0f, 1.0f, volume), std::memory_order_relaxed);
@@ -316,6 +331,9 @@ void AudioDeviceHost::audioDeviceAboutToStart (juce::AudioIODevice* startingDevi
     reverb.setParameters (parameters);
 
     reverbScratch.setSize (2, juce::jmax (blockSize, 1), false, true, false);
+
+    metronome.prepare (rate);
+    transport.setTempo (targetTempo.load (std::memory_order_relaxed));
     currentReverbMix = targetReverbMix.load (std::memory_order_relaxed);
     currentVolume = targetVolume.load (std::memory_order_relaxed);
 
@@ -441,6 +459,19 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
         }
     }
 
+    // ── Reloj musical ───────────────────────────────────────────────────────
+    //
+    // El tempo y el origen de la rejilla se aplican **aquí**, al principio del
+    // bloque, nunca a mitad: cambiar la rejilla por dentro movería los pulsos
+    // que ya se han emitido en este mismo bloque.
+    transport.setTempo (targetTempo.load (std::memory_order_relaxed));
+
+    if (restartGrid.exchange (false, std::memory_order_relaxed))
+        transport.setBarZeroSample (static_cast<double> (transport.samplePosition()));
+
+    metronome.setEnabled (metronomeOn.load (std::memory_order_relaxed));
+    metronome.setGain (metronomeGain.load (std::memory_order_relaxed));
+
     // ── Síntesis ────────────────────────────────────────────────────────────
     auto* currentInstrument = instrument.load (std::memory_order_acquire);
 
@@ -449,6 +480,11 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
         juce::AudioBuffer<float> buffer (outputChannelData, numOutputChannels, numSamples);
 
         currentInstrument->process (buffer, core::MidiEventSpan { eventScratch.data(), numEvents });
+
+        // El metrónomo suma sobre el mismo buffer y **antes** del limitador:
+        // así el clic también queda protegido y no se escapa por encima de
+        // fondo de escala cuando el instrumento ya está fuerte.
+        metronome.process (buffer, transport.samplePosition(), transport);
 
         float* left = outputChannelData[0];
         float* right = numOutputChannels > 1 ? outputChannelData[1] : nullptr;

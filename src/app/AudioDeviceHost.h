@@ -8,6 +8,7 @@
 
 #include <core/audio/Limiter.h>
 #include <core/instrument/IInstrument.h>
+#include <core/instrument/Metronome.h>
 #include <core/midi/KeyboardState.h>
 #include <core/midi/LockFreeQueue.h>
 #include <core/time/Transport.h>
@@ -127,6 +128,23 @@ public:
     void cancelLearn() noexcept { learningVolume.store (false, std::memory_order_relaxed); }
     bool isLearningVolumeController() const noexcept { return learningVolume.load (std::memory_order_relaxed); }
 
+    // ── Metrónomo (doc 05, fase 2) ──────────────────────────────────────────
+
+    void setMetronomeEnabled (bool enabled) noexcept;
+    bool isMetronomeEnabled() const noexcept { return metronomeOn.load (std::memory_order_relaxed); }
+
+    void setMetronomeGain (float gain) noexcept;
+
+    /** Negras por minuto. Se aplica al principio del siguiente bloque, nunca a
+        mitad de uno: cambiar la rejilla dentro de un bloque movería los pulsos
+        ya emitidos. */
+    void setTempo (double beatsPerMinute) noexcept;
+    double tempo() const noexcept { return targetTempo.load (std::memory_order_relaxed); }
+
+    /** Pone el pulso cero aquí y ahora, para que el ejercicio empiece a tiempo
+        en vez de en un sitio arbitrario de la rejilla. */
+    void restartBarGrid() noexcept { restartGrid.store (true, std::memory_order_relaxed); }
+
     // ── Entrada MIDI (la llama MidiInputHost, desde el hilo del driver) ─────
 
     /** Empuja un mensaje con el instante en que llegó, medido con el reloj de
@@ -191,6 +209,12 @@ private:
     core::Transport transport;
     core::KeyboardState keyboard;
     core::Limiter limiter;
+    core::Metronome metronome;
+
+    std::atomic<bool> metronomeOn { false };
+    std::atomic<float> metronomeGain { 0.5f };
+    std::atomic<double> targetTempo { 90.0 };
+    std::atomic<bool> restartGrid { false };
 
     juce::Reverb reverb;
     juce::AudioBuffer<float> reverbScratch;

@@ -52,6 +52,12 @@ Settings Settings::load()
     if (const auto value = get ("volumeController"); ! value.isVoid())
         settings.volumeController = juce::jlimit (0, 127, static_cast<int> (value));
 
+    if (const auto value = get ("tempoBpm"); ! value.isVoid())
+        settings.tempoBpm = juce::jlimit (20.0, 300.0, static_cast<double> (value));
+
+    if (const auto value = get ("perceptualOffsetMs"); ! value.isVoid())
+        settings.perceptualOffsetMs = juce::jlimit (-100.0, 100.0, static_cast<double> (value));
+
     return settings;
 }
 
@@ -67,6 +73,8 @@ void Settings::save() const
     root->setProperty ("masterVolume", masterVolume);
     root->setProperty ("reverbMix", reverbMix);
     root->setProperty ("volumeController", volumeController);
+    root->setProperty ("tempoBpm", tempoBpm);
+    root->setProperty ("perceptualOffsetMs", perceptualOffsetMs);
 
     const auto target = file();
     target.getParentDirectory().createDirectory();

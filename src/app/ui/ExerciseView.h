@@ -29,6 +29,10 @@ public:
     void refresh (const core::ExerciseRunner& runner);
 
     void showIdle();
+
+    /** El informe del intento en modo tempo: varias líneas de texto llano,
+        sin porcentajes y ordenadas por lo que hay que corregir primero. */
+    void showReport (const juce::String& exerciseName, const juce::StringArray& lines);
     void showRangeMessage (const juce::String& message);
 
     void paint (juce::Graphics& g) override;
@@ -40,6 +44,8 @@ private:
     juce::String nextText;
     juce::String nudge;         // pista, sólo cuando se lleva un rato atascado
     juce::String rangeMessage;
+    juce::StringArray reportLines;
+    bool showingReport { false };
 
     double progress { 0.0 };
     bool finished { false };

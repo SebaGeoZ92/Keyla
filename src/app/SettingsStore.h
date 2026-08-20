@@ -33,6 +33,14 @@ struct Settings
     float reverbMix { 0.12f };
     int volumeController { 7 };
 
+    double tempoBpm { 90.0 };
+
+    /** El offset perceptual del doc 04 §6, en ms. Sale de la calibración por
+        loopback y se persiste **por configuración de dispositivo**, porque
+        depende de la latencia de la salida que se esté usando. Mientras no se
+        calibre vale cero, y el informe lo dice en vez de fingir precisión. */
+    double perceptualOffsetMs { 0.0 };
+
     /** %APPDATA%\Keyla\settings.json — el sitio normal en Windows. */
     static juce::File file();
 

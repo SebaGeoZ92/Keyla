@@ -64,6 +64,9 @@ MainComponent::MainComponent()
     addAndMakeVisible (exerciseView);
     addAndMakeVisible (exerciseBox);
     addAndMakeVisible (exerciseButton);
+    addAndMakeVisible (modeBox);
+    addAndMakeVisible (metronomeToggle);
+    addAndMakeVisible (tempoSlider);
 
     for (auto id : { core::InstrumentId::piano, core::InstrumentId::electricPiano,
                      core::InstrumentId::organ, core::InstrumentId::accordion,
@@ -152,6 +155,28 @@ MainComponent::MainComponent()
     panicButton.onClick = [this] { audioHost.pushMidiMessage (makeAllNotesOff()); };
 
     rebuildExerciseList();
+
+    // Los dos modos del doc 02 5. En espera no se evalua el ritmo porque no hay
+    // ritmo que evaluar; en tempo el reloj no espera y se evalua todo.
+    modeBox.addItem ("Modo espera", 1);
+    modeBox.addItem ("Modo tempo", 2);
+    modeBox.setSelectedId (1, juce::dontSendNotification);
+
+    metronomeToggle.onClick = [this]
+    {
+        audioHost.setMetronomeEnabled (metronomeToggle.getToggleState());
+    };
+
+    tempoSlider.setRange (40.0, 200.0, 1.0);
+    tempoSlider.setValue (prefs.tempoBpm, juce::dontSendNotification);
+    tempoSlider.setTextValueSuffix (" BPM");
+    tempoSlider.onValueChange = [this]
+    {
+        prefs.tempoBpm = tempoSlider.getValue();
+        audioHost.setTempo (prefs.tempoBpm);
+    };
+
+    audioHost.setTempo (prefs.tempoBpm);
 
     exerciseButton.onClick = [this]
     {
@@ -376,6 +401,21 @@ void MainComponent::startSelectedExercise()
     while (audioHost.popNoteEvent (discarded))
         ;
 
+    tempoMode = modeBox.getSelectedId() == 2;
+
+    if (tempoMode)
+    {
+        // El reloj arranca aqui: el pulso cero se coloca ahora para que el
+        // ejercicio empiece a tiempo y no en un punto arbitrario de la rejilla.
+        tempoExercise = exercise;
+        recorder.start (audioHost.snapshot().sampleRate);
+        tempoStartSample = static_cast<double> (audioHost.snapshot().streamSamples);
+
+        audioHost.restartBarGrid();
+        audioHost.setMetronomeEnabled (true);
+        metronomeToggle.setToggleState (true, juce::dontSendNotification);
+    }
+
     runner.start (std::move (exercise), juce::Time::getMillisecondCounterHiRes() * 0.001);
     exerciseButton.setButtonText ("Parar");
     exerciseView.refresh (runner);
@@ -383,10 +423,54 @@ void MainComponent::startSelectedExercise()
 
 void MainComponent::stopExercise()
 {
+    if (tempoMode && recorder.isRecording())
+    {
+        finishTempoAttempt();
+        return;
+    }
+
     runner.stop();
     exerciseButton.setButtonText ("Empezar");
     exerciseView.showIdle();
     keyboardView.setExpectedPitches ({});
+}
+
+void MainComponent::finishTempoAttempt()
+{
+    const auto snapshot = audioHost.snapshot();
+    recorder.stop (static_cast<double> (snapshot.streamSamples));
+
+    runner.stop();
+    tempoMode = false;
+    exerciseButton.setButtonText ("Empezar");
+    keyboardView.setExpectedPitches ({});
+
+    // La grabacion se pasa al dominio de sesion tal cual y se evalua de una
+    // vez. La alineacion es una funcion pura sobre datos: no sabe que existe
+    // un teclado ni una ventana.
+    const auto played = recorder.groupIntoEvents();
+
+    core::AlignmentOptions options;
+    options.perceptualOffsetMs = prefs.perceptualOffsetMs;
+
+    // Los pulsos del ejercicio estan en negras; a segundos con el tempo actual.
+    const double beatsToSeconds = 60.0 / juce::jmax (1.0, prefs.tempoBpm);
+
+    // El origen: la grabacion empieza donde se puso el pulso cero.
+    auto shifted = played;
+
+    for (auto& event : shifted)
+        for (auto& note : event.notes)
+            note.onsetSample -= tempoStartSample;
+
+    const auto alignment = core::alignPerformance (shifted, tempoExercise.events,
+                                                   snapshot.sampleRate, beatsToSeconds,
+                                                   options);
+
+    const auto metrics = core::computeMetrics (alignment, shifted, snapshot.sampleRate);
+
+    exerciseView.showReport (tempoExercise.name, core::describeMetrics (metrics));
+    audioHost.setMetronomeEnabled (metronomeToggle.getToggleState());
 }
 
 void MainComponent::pumpNoteEvents()
@@ -398,15 +482,43 @@ void MainComponent::pumpNoteEvents()
     {
         anything = true;
 
+        // La grabacion se queda con la posicion exacta de sample, no con el
+        // reloj del sistema: es el invariante 2 y es lo que hace que la
+        // evaluacion temporal signifique algo.
+        if (recorder.isRecording())
+        {
+            if (note.isOn)
+                recorder.noteOn (note.pitch, note.velocity, note.exactSample);
+            else
+                recorder.noteOff (note.pitch, note.exactSample);
+        }
+
         if (! runner.isRunning())
             continue;
 
         const double seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
 
+        // En modo tempo el cursor avanza pase lo que pase: el reloj no espera.
+        // Aqui solo sirve para mover el resalte del teclado, no para evaluar.
         if (note.isOn)
-            runner.noteOn (note.pitch, seconds);
+        {
+            if (tempoMode)
+            {
+                if (const auto* event = runner.currentEvent())
+                {
+                    const bool wanted = event->contains (note.pitch);
+                    runner.noteOn (wanted ? note.pitch : event->pitches.front(), seconds);
+                }
+            }
+            else
+            {
+                runner.noteOn (note.pitch, seconds);
+            }
+        }
         else
+        {
             runner.noteOff (note.pitch);
+        }
     }
 
     if (! runner.isRunning() && ! runner.isFinished())
@@ -418,6 +530,12 @@ void MainComponent::pumpNoteEvents()
     keyboardView.setExpectedPitches (runner.isFinished() ? std::vector<int> {}
                                                          : runner.pendingPitches());
 
+    if (runner.isFinished() && tempoMode && recorder.isRecording())
+    {
+        finishTempoAttempt();
+        return;
+    }
+
     if (runner.isFinished() && exerciseButton.getButtonText() != "Empezar")
         exerciseButton.setButtonText ("Empezar");
 }
@@ -425,6 +543,7 @@ void MainComponent::pumpNoteEvents()
 void MainComponent::saveSettings()
 {
     prefs.volumeController = audioHost.volumeControllerNumber();
+    prefs.tempoBpm = tempoSlider.getValue();
     prefs.masterVolume = audioHost.masterVolume();
     prefs.save();
 }
@@ -553,9 +672,14 @@ void MainComponent::resized()
     area.removeFromTop (6);
 
     auto exerciseRow = area.removeFromTop (26);
-    exerciseBox.setBounds (exerciseRow.removeFromLeft (400));
+    exerciseBox.setBounds (exerciseRow.removeFromLeft (330));
     exerciseRow.removeFromLeft (8);
-    exerciseButton.setBounds (exerciseRow.removeFromLeft (100));
+    modeBox.setBounds (exerciseRow.removeFromLeft (120));
+    exerciseRow.removeFromLeft (8);
+    exerciseButton.setBounds (exerciseRow.removeFromLeft (90));
+    exerciseRow.removeFromLeft (16);
+    metronomeToggle.setBounds (exerciseRow.removeFromLeft (110));
+    tempoSlider.setBounds (exerciseRow.removeFromLeft (200));
 
     area.removeFromTop (6);
     exerciseView.setBounds (area.removeFromTop (72));

@@ -61,8 +61,22 @@ Se saltó la fase 2 (metrónomo y grabación) a propósito: el modo espera no
 necesita reloj ni grabación, sólo emparejar alturas. La fase 2 hace falta antes
 del **modo tempo**, no antes de éste.
 
-Siguiente paso: fase 2 (metrónomo + grabación) para poder abordar la evaluación
-temporal de la fase 4, que es donde está el valor real del producto.
+**Fases 2 y 4, el motor.** Metrónomo calculado desde el mapa de pulsos —no
+reprogramado, por eso no deriva—, grabación con posición fraccionaria exacta,
+alineación por distancia de edición y las métricas del doc 02 §5: sesgo,
+consistencia, deriva de tempo, regularidad y uniformidad de velocity. La
+aplicación tiene ya los dos modos: espera y tempo.
+
+Lo que falta para cerrar de verdad:
+
+- **El calibrador de loopback en la app.** El offset perceptual (invariante 7,
+  doc 04 §6) está implementado y persistido, pero vale cero mientras nadie lo
+  mida. Con él a cero, el informe de ritmo arrastra la latencia del sistema como
+  si fuera del alumno. `audio_probe --calibrate` ya sabe medirlo; falta traerlo.
+- Persistencia de sesiones y exportación a SMF (doc 05 fase 2).
+- Reproducción de lo grabado.
+- Importador de MIDI, que es la respuesta al riesgo del doc 01 §2.4: el
+  contenido no puede depender de escribir ejercicios a mano.
 
 ## Invariantes de arquitectura
 
