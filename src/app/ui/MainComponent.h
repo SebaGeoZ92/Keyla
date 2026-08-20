@@ -13,6 +13,7 @@
 #include <core/recording/SessionRecorder.h>
 #include <core/instrument/Instruments.h>
 #include <core/score/ExerciseGenerator.h>
+#include <core/score/MidiFileImporter.h>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -51,6 +52,7 @@ private:
     void stopExercise();
     void pumpNoteEvents();
     void finishTempoAttempt();
+    void importMidiExercise();
 
     // ── Dominio de tiempo real ──────────────────────────────────────────────
     //
@@ -98,6 +100,8 @@ private:
     juce::TextButton learnButton { "Aprender" };
     juce::ComboBox exerciseBox, modeBox;
     juce::TextButton exerciseButton { "Empezar" };
+    juce::TextButton importButton { "Abrir MIDI..." };
+    std::unique_ptr<juce::FileChooser> chooser;
     juce::ToggleButton metronomeToggle { "Metronomo" };
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
 

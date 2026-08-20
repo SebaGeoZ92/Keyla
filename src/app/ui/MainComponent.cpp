@@ -67,6 +67,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (modeBox);
     addAndMakeVisible (metronomeToggle);
     addAndMakeVisible (tempoSlider);
+    addAndMakeVisible (importButton);
 
     for (auto id : { core::InstrumentId::piano, core::InstrumentId::electricPiano,
                      core::InstrumentId::organ, core::InstrumentId::accordion,
@@ -185,6 +186,8 @@ MainComponent::MainComponent()
         else
             startSelectedExercise();
     };
+
+    importButton.onClick = [this] { importMidiExercise(); };
 
     keyboardView.setRange (keyboardLowest, keyboardHighest);
     keyboardView.onNoteOn = [this] (int note, int velocity) { sendNote (note, velocity, true); };
@@ -540,6 +543,52 @@ void MainComponent::pumpNoteEvents()
         exerciseButton.setButtonText ("Empezar");
 }
 
+void MainComponent::importMidiExercise()
+{
+    // Sin esto, Keyla es un motor excelente con nueve ejercicios escritos a
+    // mano, que es el fracaso que el doc 01 §2.4 predijo para este proyecto.
+    chooser = std::make_unique<juce::FileChooser> ("Elige un fichero MIDI"_u8,
+                                                   juce::File::getSpecialLocation (
+                                                       juce::File::userMusicDirectory),
+                                                   "*.mid;*.midi");
+
+    chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+
+        if (file == juce::File {})
+            return;
+
+        const auto imported = core::importMidiFile (file);
+
+        if (! imported.ok)
+        {
+            showMessage (imported.message, true);
+            return;
+        }
+
+        exercises.push_back (imported.exercise);
+        exerciseBox.addItem (imported.exercise.name,
+                             static_cast<int> (exercises.size()));
+        exerciseBox.setSelectedId (static_cast<int> (exercises.size()),
+                                   juce::dontSendNotification);
+
+        // El tempo del fichero manda, que para eso viene escrito.
+        tempoSlider.setValue (imported.tempoBpm, juce::sendNotificationSync);
+
+        juce::String note = imported.exercise.name + "  ·  "_u8
+                          + juce::String (imported.exercise.totalNotes()) + " notas  ·  "_u8
+                          + core::handSeparationDescription (imported.handSeparation);
+
+        if (imported.message.isNotEmpty())
+            note += "  ·  "_u8 + imported.message;
+
+        showMessage (note, imported.truncated);
+    });
+}
+
 void MainComponent::saveSettings()
 {
     prefs.volumeController = audioHost.volumeControllerNumber();
@@ -679,7 +728,9 @@ void MainComponent::resized()
     exerciseButton.setBounds (exerciseRow.removeFromLeft (90));
     exerciseRow.removeFromLeft (16);
     metronomeToggle.setBounds (exerciseRow.removeFromLeft (110));
-    tempoSlider.setBounds (exerciseRow.removeFromLeft (200));
+    tempoSlider.setBounds (exerciseRow.removeFromLeft (180));
+    exerciseRow.removeFromLeft (10);
+    importButton.setBounds (exerciseRow.removeFromLeft (110));
 
     area.removeFromTop (6);
     exerciseView.setBounds (area.removeFromTop (72));

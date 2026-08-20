@@ -61,6 +61,11 @@ Se saltó la fase 2 (metrónomo y grabación) a propósito: el modo espera no
 necesita reloj ni grabación, sólo emparejar alturas. La fase 2 hace falta antes
 del **modo tempo**, no antes de éste.
 
+**Importador de MIDI hecho** (doc 05 fase 5, y respuesta al riesgo del doc 01
+§2.4). Un solo modelo interno y dos fuentes: el generador de escalas y el SMF.
+Separa manos por pista, por canal o —como último recurso y diciéndolo— por
+altura. No inventa digitación.
+
 **Fases 2 y 4, el motor.** Metrónomo calculado desde el mapa de pulsos —no
 reprogramado, por eso no deriva—, grabación con posición fraccionaria exacta,
 alineación por distancia de edición y las métricas del doc 02 §5: sesgo,
@@ -75,8 +80,8 @@ Lo que falta para cerrar de verdad:
   si fuera del alumno. `audio_probe --calibrate` ya sabe medirlo; falta traerlo.
 - Persistencia de sesiones y exportación a SMF (doc 05 fase 2).
 - Reproducción de lo grabado.
-- Importador de MIDI, que es la respuesta al riesgo del doc 01 §2.4: el
-  contenido no puede depender de escribir ejercicios a mano.
+- Calibración de la curva de velocity (doc 02 §4.3): sin ella, decir "tocas
+  demasiado fuerte" es una afirmación sobre el teclado, no sobre el alumno.
 
 ## Invariantes de arquitectura
 

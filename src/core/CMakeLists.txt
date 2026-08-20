@@ -29,6 +29,8 @@ add_library(keyla_core STATIC
         score/Exercise.cpp
         score/ExerciseGenerator.h
         score/ExerciseGenerator.cpp
+        score/MidiFileImporter.h
+        score/MidiFileImporter.cpp
         exercise/ExerciseRunner.h
         exercise/ExerciseRunner.cpp
         instrument/Metronome.h

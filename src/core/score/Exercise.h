@@ -27,6 +27,14 @@ struct ExpectedEvent
     std::vector<std::uint8_t> pitches;
     double onsetBeat { 0.0 };
     double durationBeats { 1.0 };
+
+    /** Una mano **por evento**, no por altura. Cuando las dos manos tocan a la
+        vez, sus notas caen en el mismo evento y esto vale `both`: se pierde a
+        qué mano pertenece cada nota concreta.
+
+        Es una pérdida consciente y hoy no molesta —para practicar una sola mano
+        se filtra antes de agrupar—, pero habrá que revisarla el día que se
+        pinte la digitación de cada mano por separado. */
     Hand hand { Hand::unknown };
 
     /** Digitación sugerida, una por altura. Vacía si no se conoce: inventarse
