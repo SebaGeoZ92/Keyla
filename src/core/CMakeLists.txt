@@ -30,7 +30,15 @@ add_library(keyla_core STATIC
         score/ExerciseGenerator.h
         score/ExerciseGenerator.cpp
         exercise/ExerciseRunner.h
-        exercise/ExerciseRunner.cpp)
+        exercise/ExerciseRunner.cpp
+        instrument/Metronome.h
+        instrument/Metronome.cpp
+        recording/SessionRecorder.h
+        recording/SessionRecorder.cpp
+        evaluation/OfflineAligner.h
+        evaluation/OfflineAligner.cpp
+        evaluation/Metrics.h
+        evaluation/Metrics.cpp)
 
 target_include_directories(keyla_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
