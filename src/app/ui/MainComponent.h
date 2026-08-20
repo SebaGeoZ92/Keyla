@@ -14,6 +14,7 @@
 #include <core/instrument/Instruments.h>
 #include <core/score/ExerciseGenerator.h>
 #include <core/score/MidiFileImporter.h>
+#include <core/score/ProgressionGenerator.h>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -47,7 +48,8 @@ private:
     void sendNote (int note, int velocity, bool on);
     void selectInstrument (core::InstrumentId id);
     void saveSettings();
-    void rebuildExerciseList();
+    void rebuildVariantBox();
+    core::Exercise buildSelectedExercise();
     void startSelectedExercise();
     void stopExercise();
     void pumpNoteEvents();
@@ -73,7 +75,13 @@ private:
     // El profesor vive en el dominio de sesión: se alimenta de la FIFO de
     // eventos del hilo de audio, nunca al revés (doc 02 §1).
     core::ExerciseRunner runner;
-    std::vector<core::Exercise> exercises;
+
+    /** Sólo los ejercicios importados de MIDI se guardan en una lista. Las
+        escalas, los arpegios y las progresiones se **generan al empezar** a
+        partir de lo que digan los desplegables: con doce tónicas, trece
+        escalas, dos manos y cuatro octavas, tenerlos precocinados en una lista
+        serían más de mil entradas ilegibles. */
+    std::vector<core::Exercise> importedExercises;
 
     /** Modo tempo: el reloj no espera. Se graba todo y al terminar se evalúa
         de una vez sobre la grabación, que es lo que permite que la evaluación
@@ -98,7 +106,7 @@ private:
     juce::Label reverbLabel, volumeLabel, statusLabel, messageLabel;
     juce::TextButton panicButton { "Silencio" };
     juce::TextButton learnButton { "Aprender" };
-    juce::ComboBox exerciseBox, modeBox;
+    juce::ComboBox kindBox, tonicBox, variantBox, optionBox, handBox, modeBox;
     juce::TextButton exerciseButton { "Empezar" };
     juce::TextButton importButton { "Abrir MIDI..." };
     std::unique_ptr<juce::FileChooser> chooser;

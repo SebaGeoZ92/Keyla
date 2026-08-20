@@ -15,6 +15,14 @@ El diseño completo está en `docs/`. Lo esencial:
 - `docs/04-medicion-de-latencia.md` — cómo se mide y criterios de aceptación
 - `docs/05-hoja-de-ruta.md` — fases y definición del prototipo actual
 
+## Para qué es esto
+
+**Keyla es la herramienta de el autor para aprender piano.** No es un producto
+que haya que lanzar. Las decisiones se miden por si le ayudan a practicar
+mañana, no por completitud de la hoja de ruta ni por hueco de mercado. Los
+`docs/` siguen siendo la referencia técnica, pero su parte de producto pesa
+menos que esto.
+
 ## Estado
 
 **Fase 0 cerrada.** `src/tools/audio_probe` implementado y medido sobre el
@@ -60,6 +68,13 @@ máquina de estados que no avanza hasta que aciertas, evaluación de alturas
 Se saltó la fase 2 (metrónomo y grabación) a propósito: el modo espera no
 necesita reloj ni grabación, sólo emparejar alturas. La fase 2 hace falta antes
 del **modo tempo**, no antes de éste.
+
+**Biblioteca de ejercicios generada, no escrita a mano.** Trece escalas (con
+los modos griegos), seis arpegios, ocho progresiones y doce tónicas se combinan
+desde los desplegables de la ventana. Las progresiones se pueden tocar en
+estado fundamental, con enlace de voces o con bajo en la izquierda; el enlace
+es lo que las convierte en un ejercicio de piano en vez de en una lista de
+acordes.
 
 **Importador de MIDI hecho** (doc 05 fase 5, y respuesta al riesgo del doc 01
 §2.4). Un solo modelo interno y dos fuentes: el generador de escalas y el SMF.

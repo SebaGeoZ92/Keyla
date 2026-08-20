@@ -16,6 +16,11 @@ enum class ScaleType
     naturalMinor,
     harmonicMinor,
     melodicMinor,       // ascendente
+    dorian,
+    phrygian,
+    lydian,
+    mixolydian,
+    locrian,
     chromatic,
     pentatonicMajor,
     pentatonicMinor,

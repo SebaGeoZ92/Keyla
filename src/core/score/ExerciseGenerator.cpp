@@ -18,6 +18,11 @@ std::vector<int> scaleIntervals (ScaleType type)
         case ScaleType::naturalMinor:     return { 0, 2, 3, 5, 7, 8, 10 };
         case ScaleType::harmonicMinor:    return { 0, 2, 3, 5, 7, 8, 11 };
         case ScaleType::melodicMinor:     return { 0, 2, 3, 5, 7, 9, 11 };
+        case ScaleType::dorian:           return { 0, 2, 3, 5, 7, 9, 10 };
+        case ScaleType::phrygian:         return { 0, 1, 3, 5, 7, 8, 10 };
+        case ScaleType::lydian:           return { 0, 2, 4, 6, 7, 9, 11 };
+        case ScaleType::mixolydian:       return { 0, 2, 4, 5, 7, 9, 10 };
+        case ScaleType::locrian:          return { 0, 1, 3, 5, 6, 8, 10 };
         case ScaleType::chromatic:        return { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
         case ScaleType::pentatonicMajor:  return { 0, 2, 4, 7, 9 };
         case ScaleType::pentatonicMinor:  return { 0, 3, 5, 7, 10 };
@@ -50,6 +55,11 @@ juce::String scaleTypeName (ScaleType type)
         case ScaleType::naturalMinor:     return "menor natural";
         case ScaleType::harmonicMinor:    return "menor armónica"_u8;
         case ScaleType::melodicMinor:     return "menor melódica"_u8;
+        case ScaleType::dorian:           return "dórica"_u8;
+        case ScaleType::phrygian:         return "frigia";
+        case ScaleType::lydian:           return "lidia";
+        case ScaleType::mixolydian:       return "mixolidia";
+        case ScaleType::locrian:          return "locria";
         case ScaleType::chromatic:        return "cromática"_u8;
         case ScaleType::pentatonicMajor:  return "pentatónica mayor"_u8;
         case ScaleType::pentatonicMinor:  return "pentatónica menor"_u8;

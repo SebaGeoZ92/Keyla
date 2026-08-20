@@ -58,6 +58,13 @@ public:
     static ChordMatch recognise (const std::vector<int>& notes);
 
     static juce::String qualitySymbol (ChordQuality quality);
+
+    /** Semitonos desde la fundamental. Es la operación inversa del
+        reconocedor, y vive aquí para que las plantillas de acorde estén en un
+        solo sitio: el generador de progresiones consume exactamente las mismas
+        definiciones con las que luego se cifra lo tocado. */
+    static std::vector<int> intervalsFor (ChordQuality quality);
+
     static juce::String qualityDescription (ChordQuality quality);
 };
 

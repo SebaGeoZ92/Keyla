@@ -124,6 +124,15 @@ juce::String ChordRecognizer::qualitySymbol (ChordQuality quality)
     return "?";
 }
 
+std::vector<int> ChordRecognizer::intervalsFor (ChordQuality quality)
+{
+    for (const auto& templ : templates)
+        if (templ.quality == quality)
+            return std::vector<int> (templ.intervals.begin(), templ.intervals.begin() + templ.size);
+
+    return { 0, 4, 7 };
+}
+
 juce::String ChordRecognizer::qualityDescription (ChordQuality quality)
 {
     switch (quality)

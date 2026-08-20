@@ -62,7 +62,11 @@ MainComponent::MainComponent()
     addAndMakeVisible (volumeLabel);
     addAndMakeVisible (learnButton);
     addAndMakeVisible (exerciseView);
-    addAndMakeVisible (exerciseBox);
+    addAndMakeVisible (kindBox);
+    addAndMakeVisible (tonicBox);
+    addAndMakeVisible (variantBox);
+    addAndMakeVisible (optionBox);
+    addAndMakeVisible (handBox);
     addAndMakeVisible (exerciseButton);
     addAndMakeVisible (modeBox);
     addAndMakeVisible (metronomeToggle);
@@ -155,7 +159,24 @@ MainComponent::MainComponent()
 
     panicButton.onClick = [this] { audioHost.pushMidiMessage (makeAllNotesOff()); };
 
-    rebuildExerciseList();
+    // ── Constructor de ejercicios ───────────────────────────────────────────
+    kindBox.addItem ("Escala", 1);
+    kindBox.addItem ("Arpegio", 2);
+    kindBox.addItem ("Progresion", 3);
+    kindBox.addItem ("Importado", 4);
+    kindBox.setSelectedId (1, juce::dontSendNotification);
+    kindBox.onChange = [this] { rebuildVariantBox(); };
+
+    for (int pitchClass = 0; pitchClass < 12; ++pitchClass)
+        tonicBox.addItem (core::pitchClassName (pitchClass), pitchClass + 1);
+
+    tonicBox.setSelectedId (1, juce::dontSendNotification);      // Do
+
+    handBox.addItem ("Derecha", 1);
+    handBox.addItem ("Izquierda", 2);
+    handBox.setSelectedId (1, juce::dontSendNotification);
+
+    rebuildVariantBox();
 
     // Los dos modos del doc 02 5. En espera no se evalua el ritmo porque no hay
     // ritmo que evaluar; en tempo el reloj no espera y se evalua todo.
@@ -202,7 +223,7 @@ MainComponent::MainComponent()
     rebuildMidiDeviceList();
     openSelectedAudioDevice();
 
-    setSize (1040, 560);
+    setSize (1100, 600);
     startTimerHz (60);
 }
 
@@ -356,27 +377,131 @@ void MainComponent::sendNote (int note, int velocity, bool on)
 
 // ── Ejercicios ──────────────────────────────────────────────────────────────
 
-void MainComponent::rebuildExerciseList()
+void MainComponent::rebuildVariantBox()
 {
-    exercises = core::defaultExercises();
+    variantBox.clear (juce::dontSendNotification);
+    optionBox.clear (juce::dontSendNotification);
 
-    exerciseBox.clear (juce::dontSendNotification);
+    const int kind = kindBox.getSelectedId();
 
-    for (int i = 0; i < static_cast<int> (exercises.size()); ++i)
-        exerciseBox.addItem (exercises[static_cast<std::size_t> (i)].name, i + 1);
+    // La tonica y la mano no pintan nada en un MIDI importado: el fichero ya
+    // trae las notas y las manos decididas. Deshabilitarlos es mas honesto que
+    // dejarlos ahi sin efecto.
+    const bool generated = kind != 4;
+    tonicBox.setEnabled (generated);
+    handBox.setEnabled (generated);
 
-    exerciseBox.setSelectedId (1, juce::dontSendNotification);
+    if (kind == 1)
+    {
+        for (int i = 0; i <= static_cast<int> (core::ScaleType::blues); ++i)
+            variantBox.addItem (core::scaleTypeName (static_cast<core::ScaleType> (i)), i + 1);
+
+        for (int octaves = 1; octaves <= 4; ++octaves)
+            optionBox.addItem (juce::String (octaves) + (octaves == 1 ? " octava" : " octavas"),
+                               octaves);
+
+        optionBox.setSelectedId (1, juce::dontSendNotification);
+    }
+    else if (kind == 2)
+    {
+        for (int i = 0; i <= static_cast<int> (core::ArpeggioType::diminished); ++i)
+            variantBox.addItem (core::arpeggioTypeName (static_cast<core::ArpeggioType> (i)), i + 1);
+
+        for (int octaves = 1; octaves <= 3; ++octaves)
+            optionBox.addItem (juce::String (octaves) + (octaves == 1 ? " octava" : " octavas"),
+                               octaves);
+
+        optionBox.setSelectedId (1, juce::dontSendNotification);
+    }
+    else if (kind == 3)
+    {
+        for (int i = 0; i <= static_cast<int> (core::ProgressionId::cumbia); ++i)
+        {
+            const auto id = static_cast<core::ProgressionId> (i);
+            variantBox.addItem (core::progressionName (id) + "  " + core::progressionDegrees (id),
+                                i + 1);
+        }
+
+        for (int i = 0; i <= static_cast<int> (core::Voicing::withLeftHandBass); ++i)
+            optionBox.addItem (core::voicingName (static_cast<core::Voicing> (i)), i + 1);
+
+        // Enlace de voces por defecto: es la forma en que estas progresiones se
+        // tocan de verdad, y en fundamental la mano pega saltos que nadie da.
+        optionBox.setSelectedId (static_cast<int> (core::Voicing::smoothVoiceLeading) + 1,
+                                 juce::dontSendNotification);
+    }
+    else
+    {
+        if (importedExercises.empty())
+            variantBox.addItem ("(abre un MIDI primero)", 1);
+        else
+            for (int i = 0; i < static_cast<int> (importedExercises.size()); ++i)
+                variantBox.addItem (importedExercises[static_cast<std::size_t> (i)].name, i + 1);
+    }
+
+    variantBox.setSelectedId (1, juce::dontSendNotification);
     exerciseView.showIdle();
+}
+
+core::Exercise MainComponent::buildSelectedExercise()
+{
+    const int kind = kindBox.getSelectedId();
+    const int variant = juce::jmax (1, variantBox.getSelectedId()) - 1;
+    const int option = juce::jmax (1, optionBox.getSelectedId());
+    const int tonicClass = juce::jmax (1, tonicBox.getSelectedId()) - 1;
+    const auto hand = handBox.getSelectedId() == 2 ? core::Hand::left : core::Hand::right;
+
+    // La tonica se coloca en la octava central del teclado visible; si el
+    // ejercicio no cabe, fitToKeyboardRange lo mueve despues.
+    const int tonicPitch = 60 + tonicClass;
+
+    if (kind == 1)
+    {
+        core::ScaleRequest request;
+        request.rootPitch = tonicPitch;
+        request.type = static_cast<core::ScaleType> (variant);
+        request.octaves = option;
+        request.hand = hand;
+        return core::generateScale (request);
+    }
+
+    if (kind == 2)
+    {
+        core::ArpeggioRequest request;
+        request.rootPitch = tonicPitch;
+        request.type = static_cast<core::ArpeggioType> (variant);
+        request.octaves = option;
+        request.hand = hand;
+        return core::generateArpeggio (request);
+    }
+
+    if (kind == 3)
+    {
+        core::ProgressionRequest request;
+        request.tonicPitch = tonicPitch;
+        request.id = static_cast<core::ProgressionId> (variant);
+        request.voicing = static_cast<core::Voicing> (option - 1);
+        request.hand = hand;
+        request.beatsPerChord = 4.0;
+        request.repeats = 2;
+        return core::generateProgression (request);
+    }
+
+    if (juce::isPositiveAndBelow (variant, static_cast<int> (importedExercises.size())))
+        return importedExercises[static_cast<std::size_t> (variant)];
+
+    return {};
 }
 
 void MainComponent::startSelectedExercise()
 {
-    const int index = exerciseBox.getSelectedId() - 1;
+    auto exercise = buildSelectedExercise();
 
-    if (! juce::isPositiveAndBelow (index, static_cast<int> (exercises.size())))
+    if (exercise.isEmpty())
+    {
+        showMessage ("No hay nada que practicar con esa combinacion.", true);
         return;
-
-    auto exercise = exercises[static_cast<std::size_t> (index)];
+    }
 
     // El ejercicio se adapta al teclado ANTES de empezar, no durante (doc 01
     // §1.1). Marcar como falladas unas notas que el alumno no puede alcanzar
@@ -569,11 +694,12 @@ void MainComponent::importMidiExercise()
             return;
         }
 
-        exercises.push_back (imported.exercise);
-        exerciseBox.addItem (imported.exercise.name,
-                             static_cast<int> (exercises.size()));
-        exerciseBox.setSelectedId (static_cast<int> (exercises.size()),
-                                   juce::dontSendNotification);
+        importedExercises.push_back (imported.exercise);
+
+        kindBox.setSelectedId (4, juce::dontSendNotification);
+        rebuildVariantBox();
+        variantBox.setSelectedId (static_cast<int> (importedExercises.size()),
+                                  juce::dontSendNotification);
 
         // El tempo del fichero manda, que para eso viene escrito.
         tempoSlider.setValue (imported.tempoBpm, juce::sendNotificationSync);
@@ -720,17 +846,28 @@ void MainComponent::resized()
 
     area.removeFromTop (6);
 
+    auto builderRow = area.removeFromTop (26);
+    kindBox.setBounds (builderRow.removeFromLeft (120));
+    builderRow.removeFromLeft (6);
+    tonicBox.setBounds (builderRow.removeFromLeft (66));
+    builderRow.removeFromLeft (6);
+    variantBox.setBounds (builderRow.removeFromLeft (300));
+    builderRow.removeFromLeft (6);
+    optionBox.setBounds (builderRow.removeFromLeft (180));
+    builderRow.removeFromLeft (6);
+    handBox.setBounds (builderRow.removeFromLeft (110));
+    builderRow.removeFromLeft (10);
+    importButton.setBounds (builderRow.removeFromLeft (110));
+
+    area.removeFromTop (6);
+
     auto exerciseRow = area.removeFromTop (26);
-    exerciseBox.setBounds (exerciseRow.removeFromLeft (330));
-    exerciseRow.removeFromLeft (8);
     modeBox.setBounds (exerciseRow.removeFromLeft (120));
     exerciseRow.removeFromLeft (8);
     exerciseButton.setBounds (exerciseRow.removeFromLeft (90));
     exerciseRow.removeFromLeft (16);
     metronomeToggle.setBounds (exerciseRow.removeFromLeft (110));
-    tempoSlider.setBounds (exerciseRow.removeFromLeft (180));
-    exerciseRow.removeFromLeft (10);
-    importButton.setBounds (exerciseRow.removeFromLeft (110));
+    tempoSlider.setBounds (exerciseRow.removeFromLeft (200));
 
     area.removeFromTop (6);
     exerciseView.setBounds (area.removeFromTop (72));
