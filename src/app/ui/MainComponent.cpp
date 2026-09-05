@@ -1,5 +1,7 @@
 #include "MainComponent.h"
 
+#include "../StartupShortcut.h"
+
 #include <core/text/Utf8.h>
 
 namespace keyla::app
@@ -40,7 +42,8 @@ namespace
     }
 }
 
-MainComponent::MainComponent()
+MainComponent::MainComponent (bool isUnattended)
+    : unattended (isUnattended)
 {
     prefs = Settings::load();
 
@@ -131,6 +134,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (statusLabel);
     addAndMakeVisible (messageLabel);
     addAndMakeVisible (panicButton);
+    addAndMakeVisible (startupToggle);
 
     exclusiveToggle.setToggleState (prefs.exclusive, juce::dontSendNotification);
     exclusiveToggle.onClick = [this]
@@ -158,6 +162,11 @@ MainComponent::MainComponent()
     };
 
     panicButton.onClick = [this] { audioHost.pushMidiMessage (makeAllNotesOff()); };
+
+    // La casilla lee el estado del disco, no de los ajustes: la verdad es si
+    // el acceso directo está en la carpeta de Inicio o no lo está.
+    startupToggle.setToggleState (startup::isEnabled(), juce::dontSendNotification);
+    startupToggle.onClick = [this] { setOpenWithWindows (startupToggle.getToggleState()); };
 
     // ── Constructor de ejercicios ───────────────────────────────────────────
     kindBox.addItem ("Escala", 1);
@@ -221,7 +230,11 @@ MainComponent::MainComponent()
     // ── Arranque ────────────────────────────────────────────────────────────
     rebuildAudioDeviceList();
     rebuildMidiDeviceList();
-    openSelectedAudioDevice();
+
+    if (unattended)
+        showMessage ("Keyla esperando. Enciende el teclado y suena."_u8, false);
+    else
+        openSelectedAudioDevice();
 
     setSize (1100, 600);
     startTimerHz (60);
@@ -715,6 +728,60 @@ void MainComponent::importMidiExercise()
     });
 }
 
+// ── Modo desatendido ────────────────────────────────────────────────────────
+
+void MainComponent::updateUnattendedState()
+{
+    if (! unattended)
+        return;
+
+    const auto connected = midiHost.isConnected();
+
+    if (connected == keyboardWasConnected)
+        return;
+
+    keyboardWasConnected = connected;
+
+    if (connected)
+    {
+        if (! audioHost.isRunning())
+            openSelectedAudioDevice();
+
+        if (onWakeRequested != nullptr)
+            onWakeRequested();
+    }
+    else
+    {
+        // Apagaste el piano. Keyla suelta la tarjeta y se aparta: el resto del
+        // equipo recupera el sonido sin tener que cerrar nada.
+        stopExercise();
+        audioHost.close();
+        showMessage ("Teclado apagado. Keyla espera y deja libre la tarjeta de sonido."_u8, false);
+
+        if (onSleepRequested != nullptr)
+            onSleepRequested();
+    }
+}
+
+void MainComponent::setOpenWithWindows (bool shouldOpen)
+{
+    juce::String error;
+
+    if (startup::setEnabled (shouldOpen, error))
+    {
+        showMessage (shouldOpen
+                         ? "Keyla arrancara con Windows y esperara callada hasta que enciendas el teclado."_u8
+                         : "Keyla ya no arranca con Windows."_u8,
+                     false);
+        return;
+    }
+
+    // Falló: la casilla vuelve a donde estaba, porque marcarla y que no pase
+    // nada es peor que no tenerla.
+    startupToggle.setToggleState (! shouldOpen, juce::dontSendNotification);
+    showMessage (error, true);
+}
+
 void MainComponent::saveSettings()
 {
     prefs.volumeController = audioHost.volumeControllerNumber();
@@ -751,6 +818,7 @@ void MainComponent::timerCallback()
     keyboardView.updateFrom (snapshot);
     nowPlayingView.updateFrom (snapshot);
     pumpNoteEvents();
+    updateUnattendedState();
 
     // El volumen se puede mover desde el teclado, así que el mando de la
     // ventana lo sigue. Con dontSendNotification: si se reenviara al motor, el
@@ -773,7 +841,9 @@ void MainComponent::timerCallback()
 
     if (! audioHost.isRunning())
     {
-        statusLabel.setText ("sin audio", juce::dontSendNotification);
+        statusLabel.setText (unattended ? "esperando al teclado  ·  la tarjeta de sonido esta libre"_u8
+                                        : juce::String ("sin audio"),
+                             juce::dontSendNotification);
         return;
     }
 
@@ -823,6 +893,8 @@ void MainComponent::resized()
     bufferSizeBox.setBounds (topRow.removeFromLeft (180));
     topRow.removeFromLeft (8);
     exclusiveToggle.setBounds (topRow.removeFromLeft (240));
+    topRow.removeFromLeft (8);
+    startupToggle.setBounds (topRow.removeFromLeft (180));
 
     area.removeFromTop (8);
 

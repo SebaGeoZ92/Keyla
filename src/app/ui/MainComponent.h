@@ -32,11 +32,18 @@ class MainComponent final : public juce::Component,
                             private juce::Timer
 {
 public:
-    MainComponent();
+    /** `unattended` = la arrancó Windows, no el usuario. Cambia el arranque
+        entero: ver `updateUnattendedState()`. */
+    explicit MainComponent (bool unattended = false);
     ~MainComponent() override;
 
     void paint (juce::Graphics& g) override;
     void resized() override;
+
+    /** La ventana se muestra o se aparta sola en modo desatendido. La decisión
+        es de aquí —es quien sabe si hay teclado— y la ejecuta la ventana. */
+    std::function<void()> onWakeRequested;
+    std::function<void()> onSleepRequested;
 
 private:
     void timerCallback() override;
@@ -55,6 +62,8 @@ private:
     void pumpNoteEvents();
     void finishTempoAttempt();
     void importMidiExercise();
+    void updateUnattendedState();
+    void setOpenWithWindows (bool shouldOpen);
 
     // ── Dominio de tiempo real ──────────────────────────────────────────────
     //
@@ -105,6 +114,7 @@ private:
     juce::Slider volumeSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::Label reverbLabel, volumeLabel, statusLabel, messageLabel;
     juce::TextButton panicButton { "Silencio" };
+    juce::ToggleButton startupToggle { "Abrir con Windows" };
     juce::TextButton learnButton { "Aprender" };
     juce::ComboBox kindBox, tonicBox, variantBox, optionBox, handBox, modeBox;
     juce::TextButton exerciseButton { "Empezar" };
@@ -117,6 +127,21 @@ private:
         porque AudioDeviceHost::Settings ya ocupa ese nombre y confundirlos
         sería una tarde perdida. */
     Settings prefs;
+
+    /** Modo desatendido: Keyla la arrancó Windows.
+
+        La regla que lo gobierna todo es una sola: **Keyla no se queda con la
+        tarjeta de sonido mientras no se la ve.** En modo exclusivo abrir el
+        dispositivo deja mudo al resto del equipo, y un programa invisible que
+        te quita el sonido del navegador sin explicar por qué es un programa
+        que se acaba desinstalando.
+
+        De ahí sale el resto: arrancada por Windows, Keyla espera minimizada y
+        sin abrir nada. Enciendes el teclado y entonces —y sólo entonces— abre
+        la tarjeta y se muestra. Lo apagas y suelta la tarjeta y se aparta.
+        Encender el piano es la señal inequívoca de que quieres tocar. */
+    const bool unattended;
+    bool keyboardWasConnected { false };
 
     juce::String pendingMessage;
     bool messageIsError { false };

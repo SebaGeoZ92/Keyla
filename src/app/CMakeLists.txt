@@ -12,6 +12,7 @@ target_sources(keyla PRIVATE
         Main.cpp
         AudioDeviceHost.cpp
         SettingsStore.cpp
+        StartupShortcut.cpp
         MidiInputHost.cpp
         ui/MainComponent.cpp
         ui/ExerciseView.cpp
@@ -40,5 +41,12 @@ target_link_libraries(keyla PRIVATE
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+if (WIN32)
+    # El acceso directo de la carpeta de Inicio se crea con IShellLink, que es
+    # COM: ole32 para CoCreateInstance, shell32 para SHGetKnownFolderPath y
+    # uuid para los CLSID/IID, que son datos y no funciones.
+    target_link_libraries(keyla PRIVATE ole32 shell32 uuid)
+endif()
 
 keyla_apply_compiler_flags(keyla)

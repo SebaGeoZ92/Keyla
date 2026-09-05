@@ -61,6 +61,20 @@ cubre lo que iba a medir. No se escribe hasta que haga falta.
 instrumentos, reverberación, teclado iluminado, reconocimiento de acordes,
 volumen general y ajustes persistentes en `%APPDATA%\Keyla`.
 
+**Arranque con Windows, con una regla que manda sobre la comodidad: Keyla no
+retiene la tarjeta de sonido mientras no se la ve.** El modo exclusivo deja
+mudo al resto del equipo, así que un arranque automático ingenuo significaría
+quedarse sin sonido en el navegador cada vez que enciendes el PC, sin ninguna
+pista de por qué. Arrancada por Windows (`--startup`), Keyla espera minimizada
+y **sin abrir el dispositivo**; abre la tarjeta y se muestra cuando aparece el
+teclado MIDI, y la suelta y se aparta cuando lo apagas. Encender el piano es la
+señal inequívoca de que quieres tocar; arrancar el PC no lo es.
+
+El acceso directo va en la carpeta de Inicio, no en la clave `Run`: se ve en el
+Explorador y se borra a mano. `--startup-on` / `--startup-off` hacen lo mismo
+que la casilla sin abrir ventana, que es también la única forma de verificar
+que el acceso directo se escribe.
+
 **Fase 3 empezada**: modo espera funcionando. Generador de escalas y arpegios,
 máquina de estados que no avanza hasta que aciertas, evaluación de alturas
 —nunca de ritmo, que aquí no existe— y adaptación al rango del teclado.
