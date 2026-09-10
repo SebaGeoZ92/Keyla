@@ -37,9 +37,10 @@ Settings Settings::load()
 
     if (const auto value = get ("instrument"); ! value.isVoid())
     {
-        const auto id = static_cast<int> (value);
-
-        if (id >= 0 && id <= static_cast<int> (core::InstrumentId::vibraphone))
+        // Se pregunta al catálogo en vez de comparar contra el último valor del
+        // enum: escrito a mano, esto se queda obsoleto el día que se añade un
+        // instrumento y nadie se entera hasta que el ajuste deja de cargarse.
+        if (const auto id = static_cast<int> (value); core::isValidInstrumentId (id))
             settings.instrument = static_cast<core::InstrumentId> (id);
     }
 

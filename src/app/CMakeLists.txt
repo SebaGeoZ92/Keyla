@@ -3,10 +3,17 @@
 # Aquí sí viven los dispositivos y la UI. Es la única parte del programa que
 # puede hablar con juce_audio_devices y juce_gui_basics (doc 03 §3).
 
+# El icono no es adorno desde que Keyla arranca con Windows: sale en la barra
+# de tareas, en el acceso directo de la carpeta de Inicio y en el Administrador
+# de tareas. juceaide lo convierte a .ico y lo incrusta en el ejecutable.
+#
+# El PNG no se dibuja a mano: lo genera scripts/make_logo.py, que es donde vive
+# el diseño de verdad.
 juce_add_gui_app(keyla
         PRODUCT_NAME "Keyla"
         COMPANY_NAME "Keyla"
-        VERSION 0.1.0)
+        VERSION 0.1.0
+        ICON_BIG "${CMAKE_SOURCE_DIR}/resources/keyla-icon.png")
 
 target_sources(keyla PRIVATE
         Main.cpp

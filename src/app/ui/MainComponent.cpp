@@ -76,9 +76,9 @@ MainComponent::MainComponent (bool isUnattended)
     addAndMakeVisible (tempoSlider);
     addAndMakeVisible (importButton);
 
-    for (auto id : { core::InstrumentId::piano, core::InstrumentId::electricPiano,
-                     core::InstrumentId::organ, core::InstrumentId::accordion,
-                     core::InstrumentId::strings, core::InstrumentId::vibraphone })
+    // El desplegable se construye del catálogo, no de una lista escrita aquí:
+    // así un instrumento nuevo aparece solo y no puede quedarse fuera.
+    for (auto id : core::allInstrumentIds())
         instrumentBox.addItem (core::instrumentName (id), static_cast<int> (id) + 1);
 
     instrumentBox.setSelectedId (static_cast<int> (prefs.instrument) + 1,

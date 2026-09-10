@@ -13,7 +13,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <vector>
 #include <iostream>
 
 using namespace keyla::core;
@@ -165,14 +168,12 @@ TEST_CASE ("Todos los instrumentos respetan el presupuesto de nivel", "[instrume
     // baratas y se aplican al catálogo entero: ninguno puede recortar solo, y
     // ninguno puede sonar al doble que los demás — cambiar de instrumento no
     // debe obligar a tocar el volumen del sistema.
-    const std::vector<InstrumentId> catalogue {
-        InstrumentId::piano, InstrumentId::electricPiano, InstrumentId::organ,
-        InstrumentId::accordion, InstrumentId::strings, InstrumentId::vibraphone
-    };
-
+    // Se recorre el catálogo entero y no una lista escrita aquí: si alguien
+    // añade un instrumento, entra en este test sin tocar nada. Una lista a mano
+    // habría dejado fuera los cinco últimos justo el día que más falta hacía.
     std::vector<float> singleNotePeaks;
 
-    for (auto id : catalogue)
+    for (auto id : allInstrumentIds())
     {
         auto instrument = createInstrument (id);
         REQUIRE (instrument != nullptr);
@@ -209,8 +210,7 @@ TEST_CASE ("Cada instrumento se apaga al soltar la tecla", "[instrument][catalog
     // Un órgano o un acordeón suenan mientras aguantas: si el Note Off no
     // bajara el apagador, la nota se quedaría sonando para siempre. Es el fallo
     // más obvio posible y el más fácil de no probar.
-    for (auto id : { InstrumentId::piano, InstrumentId::electricPiano, InstrumentId::organ,
-                     InstrumentId::accordion, InstrumentId::strings, InstrumentId::vibraphone })
+    for (auto id : allInstrumentIds())
     {
         auto instrument = createInstrument (id);
         instrument->prepare (sampleRate, blockSize);
@@ -406,4 +406,234 @@ TEST_CASE ("El pedal sostiene y soltarlo apaga", "[instrument][pedal]")
     }
 
     CHECK (synth.activeVoiceCount() == 0);
+}
+
+TEST_CASE ("La cuerda pulsada esta afinada", "[instrument][plucked][tuning]")
+{
+    // Karplus-Strong afina por la **longitud** del buffer, así que un retardo
+    // redondeado a entero desafina, y desafina más cuanto más aguda es la nota:
+    // en un Do6 el error de redondear pasa de 13 cents. Para una herramienta de
+    // aprender piano eso no es un matiz de timbre, es un instrumento que miente.
+    //
+    // La primera versión de este test contaba cruces por cero y daba disparates
+    // —un clavecín recién pulsado tiene tanto agudo que cruza el cero seis veces
+    // por ciclo—. Se mide por autocorrelación, que busca el periodo que mejor se
+    // repite en vez de suponer que sólo hay una frecuencia.
+    for (auto id : { InstrumentId::guitar, InstrumentId::harpsichord })
+    {
+        for (int pitch : { 40, 52, 64, 76, 84 })
+        {
+            auto instrument = createInstrument (id);
+            instrument->prepare (sampleRate, blockSize);
+
+            StampedMidiEvent event;
+            event.message = noteOn (pitch, 100);
+            event.renderOffset = 0;
+
+            juce::AudioBuffer<float> buffer (2, blockSize);
+            buffer.clear();
+            instrument->process (buffer, MidiEventSpan { &event, 1 });
+
+            // Se deja pasar el ataque: el ruido inicial de la púa todavía no es
+            // el tono de la cuerda.
+            for (int block = 0; block < static_cast<int> (0.12 * sampleRate / blockSize); ++block)
+            {
+                buffer.clear();
+                instrument->process (buffer, MidiEventSpan { nullptr, 0 });
+            }
+
+            std::vector<double> signal;
+
+            for (int block = 0; block < static_cast<int> (0.30 * sampleRate / blockSize); ++block)
+            {
+                buffer.clear();
+                instrument->process (buffer, MidiEventSpan { nullptr, 0 });
+
+                const auto* data = buffer.getReadPointer (0);
+
+                for (int i = 0; i < blockSize; ++i)
+                    signal.push_back (data[i]);
+            }
+
+            const double expected = midiToHertz (pitch);
+            const double expectedLag = sampleRate / expected;
+
+            const auto lowest = static_cast<int> (expectedLag * 0.75);
+            const auto highest = static_cast<int> (expectedLag * 1.33);
+
+            REQUIRE (highest + 1 < static_cast<int> (signal.size()) / 2);
+
+            const auto window = static_cast<int> (signal.size()) - highest - 1;
+
+            const auto correlationAt = [&signal, window] (int lag)
+            {
+                double sum = 0.0;
+
+                for (int i = 0; i < window; ++i)
+                    sum += signal[static_cast<std::size_t> (i)]
+                         * signal[static_cast<std::size_t> (i + lag)];
+
+                return sum;
+            };
+
+            int bestLag = lowest;
+            double bestCorrelation = correlationAt (lowest);
+
+            for (int lag = lowest + 1; lag <= highest; ++lag)
+            {
+                const auto correlation = correlationAt (lag);
+
+                if (correlation > bestCorrelation)
+                {
+                    bestCorrelation = correlation;
+                    bestLag = lag;
+                }
+            }
+
+            REQUIRE (bestLag > lowest);
+            REQUIRE (bestLag < highest);
+
+            // Interpolación parabólica entre los tres puntos del pico: sin ella
+            // la resolución sería de un sample entero, que en Do6 son justo los
+            // 13 cents que este test quiere poder ver.
+            const double before = correlationAt (bestLag - 1);
+            const double after = correlationAt (bestLag + 1);
+            const double denominator = before - 2.0 * bestCorrelation + after;
+            const double offset = denominator != 0.0 ? 0.5 * (before - after) / denominator : 0.0;
+
+            const double measured = sampleRate / (bestLag + offset);
+            const double cents = 1200.0 * std::log2 (measured / expected);
+
+            INFO (instrumentName (id).toStdString() << " nota " << pitch
+                  << ": esperado " << expected << " Hz, medido " << measured
+                  << " Hz (" << cents << " cents)");
+
+            // Diez cents es el orden de lo que un oído entrenado empieza a
+            // notar. Redondear el retardo a entero rompe este test.
+            CHECK (std::abs (cents) < 10.0);
+        }
+    }
+}
+
+TEST_CASE ("La cuerda pulsada se apaga sola", "[instrument][plucked]")
+{
+    // Una cuerda de Karplus-Strong no tiene envolvente que decida cuándo
+    // callarse: se apaga porque el bucle pierde energía. Si el seguidor de nivel
+    // estuviera mal, la voz no se retiraría nunca y el pool se agotaría en unos
+    // pocos compases — un fallo que sólo se nota tocando de verdad, y tarde.
+    auto instrument = createInstrument (InstrumentId::guitar);
+    instrument->prepare (sampleRate, blockSize);
+
+    StampedMidiEvent event;
+    event.message = noteOn (55, 110);
+    event.renderOffset = 0;
+
+    juce::AudioBuffer<float> buffer (2, blockSize);
+    buffer.clear();
+    instrument->process (buffer, MidiEventSpan { &event, 1 });
+
+    CHECK (instrument->activeVoiceCount() == 1);
+
+    // Sin soltar la tecla en ningún momento: la cuerda tiene que callarse sola.
+    for (int block = 0; block < static_cast<int> (25.0 * sampleRate / blockSize); ++block)
+    {
+        buffer.clear();
+        instrument->process (buffer, MidiEventSpan { nullptr, 0 });
+    }
+
+    CHECK (instrument->activeVoiceCount() == 0);
+}
+
+TEST_CASE ("El catalogo no tiene nombres ni huecos repetidos", "[instrument][catalogue]")
+{
+    // allInstrumentIds() se escribe a mano y es la lista de la que cuelga todo:
+    // el desplegable, la validación de ajustes y los tests de nivel. Olvidar
+    // uno significaría que existe pero no se puede elegir.
+    const auto& catalogue = allInstrumentIds();
+
+    CHECK (catalogue.size() == static_cast<std::size_t> (InstrumentId::choir) + 1);
+
+    std::vector<int> seen;
+
+    for (auto id : catalogue)
+    {
+        const auto value = static_cast<int> (id);
+
+        INFO ("instrumento " << instrumentName (id).toStdString());
+        CHECK (instrumentName (id) != "?");
+        CHECK (isValidInstrumentId (value));
+        CHECK (std::find (seen.begin(), seen.end(), value) == seen.end());
+
+        seen.push_back (value);
+    }
+
+    CHECK (! isValidInstrumentId (-1));
+    CHECK (! isValidInstrumentId (static_cast<int> (catalogue.size())));
+}
+
+TEST_CASE ("Ningun instrumento se sale del presupuesto de CPU", "[instrument][catalogue][cpu]")
+{
+    // El invariante 9 dice que cero dropouts manda sobre latencia baja, y un
+    // instrumento caro es la forma más fácil de romperlo sin darse cuenta: no
+    // falla nada, simplemente un día el audio empieza a chasquear tocando
+    // acordes. El coro lleva 32 parciales por voz y la cuerda pulsada hace un
+    // memset de 16 kB en cada Note On, así que conviene tener el número.
+    //
+    // Se mide el tiempo de reloj de pared, que aquí sí vale: no se está
+    // sellando nada musical, se está cronometrando código (invariante 2).
+    // La cifra es de esta máquina y de este build; lo que se comprueba no es el
+    // valor exacto sino que ninguno se dispare frente a los demás.
+    constexpr double seconds = 2.0;
+
+    // Acorde de seis notas mantenido, que es lo que se toca de verdad, más
+    // repulsado cada poco para pagar también el coste de arrancar voces.
+    const std::vector<int> chord { 48, 52, 55, 60, 64, 67 };
+
+    for (auto id : allInstrumentIds())
+    {
+        auto instrument = createInstrument (id);
+        instrument->prepare (sampleRate, blockSize);
+
+        juce::AudioBuffer<float> buffer (2, blockSize);
+
+        const auto totalBlocks = static_cast<int> (seconds * sampleRate / blockSize);
+        const auto retriggerEvery = static_cast<int> (0.5 * sampleRate / blockSize);
+
+        std::vector<StampedMidiEvent> events;
+
+        for (auto pitch : chord)
+        {
+            StampedMidiEvent event;
+            event.message = noteOn (pitch, 110);
+            event.renderOffset = 0;
+            events.push_back (event);
+        }
+
+        const auto started = std::chrono::steady_clock::now();
+
+        for (int block = 0; block < totalBlocks; ++block)
+        {
+            buffer.clear();
+
+            if (block % retriggerEvery == 0)
+                instrument->process (buffer, MidiEventSpan { events.data(), events.size() });
+            else
+                instrument->process (buffer, MidiEventSpan { nullptr, 0 });
+        }
+
+        const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started;
+        const double load = elapsed.count() / seconds;
+
+        std::cout << "  [cpu] " << instrumentName (id).toStdString()
+                  << "\t" << (load * 100.0) << " % de tiempo real\n";
+
+        INFO ("instrumento " << instrumentName (id).toStdString()
+              << " al " << (load * 100.0) << " % de tiempo real");
+
+        // Techo generoso a propósito: un test de tiempo en una máquina
+        // compartida no puede ser fino sin volverse intermitente, y lo que se
+        // busca aquí es cazar un instrumento diez veces más caro que el resto,
+        // no discutir un 3 %.
+        CHECK (load < 0.25);
+    }
 }

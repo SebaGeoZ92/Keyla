@@ -57,9 +57,37 @@ Dos salvedades que hay que arrastrar:
 `midi_monitor` (fase 0-A del doc 05) no se ha llegado a necesitar: `audio_probe`
 cubre lo que iba a medir. No se escribe hasta que haga falta.
 
-**Fase 1 hecha** salvo grabación y calibrador de loopback: aplicación con seis
+**Fase 1 hecha** salvo grabación y calibrador de loopback: aplicación con once
 instrumentos, reverberación, teclado iluminado, reconocimiento de acordes,
 volumen general y ajustes persistentes en `%APPDATA%\Keyla`.
+
+**Once instrumentos, y uno de ellos por modelo físico.** Piano, piano eléctrico,
+clavecín, órgano, acordeón, guitarra, cuerdas, coro, vibráfono, marimba y
+flauta. La guitarra y el clavecín son **Karplus-Strong** —una cuerda pulsada de
+verdad: ruido recirculando por un buffer del largo de un periodo— y salen
+sorprendentemente baratos: **0,22 % y 0,27 % de tiempo real** frente al 12,4 %
+del piano aditivo. El coro usa formantes fijos, que es lo que separa una vocal
+de un órgano.
+
+`allInstrumentIds()` es la única lista del catálogo: de ella cuelgan el
+desplegable, la validación de ajustes y los tests, de modo que un instrumento
+nuevo no se puede quedar sin probar ni sin poder elegirse. Los valores del enum
+son un contrato de persistencia y sólo se añade al final.
+
+Dos cosas que costaron y conviene no repetir:
+
+- **La ganancia del bucle de Karplus-Strong se aplica por vuelta al buffer, no
+  por sample.** Calculada como si fuera por sample, un Sol3 tardaba veinticinco
+  segundos en apagarse y la voz no se liberaba nunca. La fórmula correcta lleva
+  la frecuencia de la nota dentro.
+- **El retardo tiene que ser fraccionario.** Redondeado a entero, un Do6 cae 13
+  cents. Hay un test de afinación por autocorrelación que lo vigila — la primera
+  versión contaba cruces por cero y daba disparates, porque un clavecín recién
+  pulsado cruza el cero seis veces por ciclo.
+
+Los recortes de ganancia del catálogo salen de medir, no de estimar: los once
+instrumentos quedan en 0,33 de pico para una nota sola. El test `[catalogue]`
+falla si alguien desequilibra uno, y `[cpu]` imprime el coste de cada uno.
 
 **Arranque con Windows, con una regla que manda sobre la comodidad: Keyla no
 retiene la tarjeta de sonido mientras no se la ve.** El modo exclusivo deja
@@ -74,6 +102,13 @@ El acceso directo va en la carpeta de Inicio, no en la clave `Run`: se ve en el
 Explorador y se borra a mano. `--startup-on` / `--startup-off` hacen lo mismo
 que la casilla sin abrir ventana, que es también la única forma de verificar
 que el acceso directo se escribe.
+
+**Icono.** Desde que arranca sola, Keyla se ve en la barra de tareas, en el
+acceso directo de Inicio y en el Administrador de tareas, así que el icono pasó
+a tener función. Lo genera `scripts/make_logo.py` —sin dependencias: rasterizado
+por barrido y el PNG escrito con zlib— y CMake se lo pasa a juceaide por
+`ICON_BIG`. El diseño se edita ahí, no en un PNG suelto. Criterio con el que se
+eligió: lo que decide un icono es si se reconoce a 16 px, no cómo se ve a 256.
 
 **Fase 3 empezada**: modo espera funcionando. Generador de escalas y arpegios,
 máquina de estados que no avanza hasta que aciertas, evaluación de alturas

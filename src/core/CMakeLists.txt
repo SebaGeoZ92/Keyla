@@ -18,6 +18,7 @@ add_library(keyla_core STATIC
         instrument/StruckStringSynth.h
         instrument/StruckStringSynth.cpp
         instrument/PolyphonicInstrument.h
+        instrument/PluckedString.h
         instrument/Voices.h
         instrument/Instruments.h
         instrument/Instruments.cpp

@@ -3,12 +3,14 @@
 // Los instrumentos de Keyla. Cada uno es una voz y una línea de typedef: toda
 // la maquinaria de reparto, pedal y robo la pone PolyphonicInstrument.
 
+#include "PluckedString.h"
 #include "PolyphonicInstrument.h"
 #include "Voices.h"
 
 #include <juce_core/juce_core.h>
 
 #include <memory>
+#include <vector>
 
 namespace keyla::core
 {
@@ -365,6 +367,276 @@ struct VibraphoneVoice
     double tremoloInc { 0.0 };
 };
 
+// ── Marimba ───────────────────────────────────────────────────────────────
+
+/** Marimba. Comparte planta con el vibráfono —una barra tiene parciales
+    inarmónicos, no una serie— pero suena a otra cosa por tres motivos, y los
+    tres importan más que las alturas:
+
+    - **La madera se traga la energía.** Donde una barra de metal dura seis
+      segundos, una de palisandro dura menos de uno.
+    - **No hay trémolo.** Los tubos de la marimba resuenan, pero no gira nada
+      dentro; el batido del vibráfono es un motor eléctrico y aquí no lo hay.
+    - **Se oye la baqueta.** El golpe sobre madera tiene un "tock" de cuerpo que
+      sin él deja el instrumento sonando a sintetizador de campanas.
+*/
+struct MarimbaVoice
+{
+    void start (int pitch, int velocity, double sampleRate) noexcept
+    {
+        const double fundamental = midiToHertz (pitch);
+        const double velocityNorm = std::clamp (velocity / 127.0, 0.0, 1.0);
+        const double t = registerPosition (pitch);
+
+        std::uint32_t random = static_cast<std::uint32_t> (pitch) * 2246822507u + 17u;
+
+        bank.clear();
+        bank.add (fundamental, 1.0, sampleRate, random);
+        bank.add (fundamental * 3.93, 0.22 + 0.26 * velocityNorm, sampleRate, random);
+        bank.add (fundamental * 9.24, 0.06 + 0.14 * velocityNorm, sampleRate, random);
+        bank.normaliseEnergy();
+
+        // Un segundo escaso en el centro del teclado, y bastante menos arriba.
+        const double decaySeconds = 1.10 * std::pow (0.30, t);
+        envelope.start (sampleRate, 0.0008, decaySeconds, 0.0, 0.12);
+
+        amplitude = 0.46 * std::pow (velocityNorm, 1.4);
+
+        // El "tock" de la baqueta contra la madera: ruido corto y sordo. Sordo
+        // de verdad —una barra de madera no tiene el brillo del metal— así que
+        // el filtro va mucho más bajo que el martillo del piano.
+        knockLevel = 0.30 * velocityNorm * velocityNorm;
+        knockDecay = std::exp (-1.0 / (0.0045 * sampleRate));
+        knockCoef = std::clamp ((350.0 + 900.0 * t) * kTwoPi / sampleRate, 0.0, 1.0);
+        knockState = 0.0;
+        noiseState = random | 1u;
+    }
+
+    void startRelease (double) noexcept { envelope.startRelease(); }
+
+    double nextSample() noexcept
+    {
+        double sample = bank.next() * envelope.next() * amplitude;
+
+        if (knockLevel > 1.0e-5)
+        {
+            noiseState ^= noiseState << 13;
+            noiseState ^= noiseState >> 17;
+            noiseState ^= noiseState << 5;
+
+            const double white = static_cast<double> (noiseState) / 2147483648.0 - 1.0;
+            knockState += (white - knockState) * knockCoef;
+
+            sample += knockState * knockLevel;
+            knockLevel *= knockDecay;
+        }
+
+        return sample;
+    }
+
+    double currentLevel() const noexcept { return envelope.level() * amplitude + knockLevel; }
+
+    PartialBank<3> bank;
+    Envelope envelope;
+    double amplitude { 0.0 };
+    double knockLevel { 0.0 };
+    double knockDecay { 0.0 };
+    double knockCoef { 0.0 };
+    double knockState { 0.0 };
+    std::uint32_t noiseState { 1 };
+};
+
+// ── Flauta ────────────────────────────────────────────────────────────────
+
+/** Flauta. El instrumento más barato del catálogo y el que más se distingue de
+    todos los demás: cuatro parciales contados.
+
+    Un tubo abierto soplado suavemente da casi una senoide, y ahí está la
+    trampa —una senoide sola no suena a flauta, suena a prueba de audio. Lo que
+    la convierte en instrumento es **el aire**: un soplo de ruido filtrado que
+    entra de golpe y luego se queda de fondo. Sin él no hay flauta.
+
+    Sirve bien para practicar una melodía sola: no tiene cola que tape los
+    errores, y una nota mal dada se oye desnuda.
+*/
+struct FluteVoice
+{
+    void start (int pitch, int velocity, double sampleRate) noexcept
+    {
+        const double fundamental = midiToHertz (pitch);
+        const double velocityNorm = std::clamp (velocity / 127.0, 0.0, 1.0);
+
+        std::uint32_t random = static_cast<std::uint32_t> (pitch) * 1103515245u + 23u;
+
+        bank.clear();
+        bank.add (fundamental, 1.0, sampleRate, random);
+        bank.add (fundamental * 2.0, 0.09 + 0.13 * velocityNorm, sampleRate, random);
+        bank.add (fundamental * 3.0, 0.03 + 0.06 * velocityNorm, sampleRate, random);
+        bank.add (fundamental * 4.0, 0.010 + 0.025 * velocityNorm, sampleRate, random);
+        bank.normaliseEnergy();
+
+        envelope.start (sampleRate, 0.085, 0.0, 1.0, 0.090);
+        amplitude = 0.52 * (0.55 + 0.45 * velocityNorm);
+
+        // El aire: fuerte durante el ataque y un hilo después. Filtrado alto,
+        // porque el soplo de una flauta es siseo, no retumbe.
+        breathLevel = 0.55;
+        breathFloor = 0.055 + 0.045 * velocityNorm;
+        breathDecay = std::exp (-1.0 / (0.070 * sampleRate));
+        breathCoef = std::clamp (3500.0 * kTwoPi / sampleRate, 0.0, 1.0);
+        breathState = 0.0;
+        noiseState = random | 1u;
+
+        vibratoPhase = 0.0;
+        vibratoInc = kTwoPi * 5.2 / sampleRate;
+        vibratoDepth = 0.0;
+        vibratoRampInc = 1.0 / (0.45 * sampleRate);
+    }
+
+    void startRelease (double) noexcept { envelope.startRelease(); }
+
+    double nextSample() noexcept
+    {
+        // El vibrato de un flautista no está desde la primera nota: aparece
+        // cuando la nota ya se sostiene.
+        if (vibratoDepth < 1.0)
+            vibratoDepth += vibratoRampInc;
+
+        vibratoPhase += vibratoInc;
+
+        if (vibratoPhase >= kTwoPi)
+            vibratoPhase -= kTwoPi;
+
+        const double envelopeValue = envelope.next();
+        const double tremolo = 1.0 + 0.055 * vibratoDepth * std::sin (vibratoPhase);
+
+        noiseState ^= noiseState << 13;
+        noiseState ^= noiseState >> 17;
+        noiseState ^= noiseState << 5;
+
+        const double white = static_cast<double> (noiseState) / 2147483648.0 - 1.0;
+        breathState += (white - breathState) * breathCoef;
+
+        if (breathLevel > breathFloor)
+            breathLevel = breathFloor + (breathLevel - breathFloor) * breathDecay;
+
+        return (bank.next() * tremolo + breathState * breathLevel) * envelopeValue * amplitude;
+    }
+
+    double currentLevel() const noexcept { return envelope.level() * amplitude; }
+
+    PartialBank<4> bank;
+    Envelope envelope;
+    double amplitude { 0.0 };
+    double breathLevel { 0.0 };
+    double breathFloor { 0.0 };
+    double breathDecay { 0.0 };
+    double breathCoef { 0.0 };
+    double breathState { 0.0 };
+    std::uint32_t noiseState { 1 };
+    double vibratoPhase { 0.0 };
+    double vibratoInc { 0.0 };
+    double vibratoDepth { 0.0 };
+    double vibratoRampInc { 0.0 };
+};
+
+// ── Coro ──────────────────────────────────────────────────────────────────
+
+/** Coro cantando "aah".
+
+    La diferencia entre esto y las cuerdas no está en la envolvente sino en el
+    espectro: una voz humana no tiene una caída lisa de armónicos, tiene
+    **formantes** —zonas fijas del espectro que la garganta refuerza, y que se
+    quedan donde están aunque cambies de nota. Eso es lo que hace que una vocal
+    siga siendo la misma vocal en grave y en agudo, y es lo único que hace falta
+    imitar para que un banco de senos deje de sonar a órgano y empiece a sonar a
+    gente.
+
+    Los tres picos de aquí (700, 1150 y 2800 Hz) son los de una "a" abierta.
+
+    Dos capas apenas desafinadas dan el resto: un coro no es una voz más alta,
+    son varias que nunca están exactamente juntas.
+*/
+struct ChoirVoice
+{
+    void start (int pitch, int velocity, double sampleRate) noexcept
+    {
+        const double fundamental = midiToHertz (pitch);
+        const double velocityNorm = std::clamp (velocity / 127.0, 0.0, 1.0);
+
+        std::uint32_t random = static_cast<std::uint32_t> (pitch) * 2891336453u + 29u;
+
+        bank.clear();
+
+        static constexpr double detuneCents[] = { -7.0, 7.0 };
+
+        for (double cents : detuneCents)
+        {
+            const double layerFrequency = fundamental * centsToRatio (cents);
+
+            for (int harmonic = 1; harmonic <= 16; ++harmonic)
+            {
+                const double frequency = layerFrequency * harmonic;
+                bank.add (frequency, formantGain (frequency) / harmonic, sampleRate, random);
+            }
+        }
+
+        bank.normaliseEnergy();
+
+        envelope.start (sampleRate, 0.180, 0.0, 1.0, 0.350);
+        amplitude = 0.34 * (0.5 + 0.5 * velocityNorm);
+
+        vibratoPhase = 0.0;
+        vibratoInc = kTwoPi * 5.0 / sampleRate;
+        vibratoDepth = 0.0;
+        vibratoRampInc = 1.0 / (0.8 * sampleRate);
+    }
+
+    void startRelease (double) noexcept { envelope.startRelease(); }
+
+    double nextSample() noexcept
+    {
+        if (vibratoDepth < 1.0)
+            vibratoDepth += vibratoRampInc;
+
+        vibratoPhase += vibratoInc;
+
+        if (vibratoPhase >= kTwoPi)
+            vibratoPhase -= kTwoPi;
+
+        const double tremolo = 1.0 + 0.045 * vibratoDepth * std::sin (vibratoPhase);
+
+        return bank.next() * envelope.next() * amplitude * tremolo;
+    }
+
+    double currentLevel() const noexcept { return envelope.level() * amplitude; }
+
+    /** Refuerzo de la garganta en una frecuencia dada. Tres campanas gaussianas
+        sobre un suelo, que es la manera más barata que hay de dibujar una vocal
+        sin montar filtros resonantes. */
+    static double formantGain (double frequency) noexcept
+    {
+        const auto peak = [frequency] (double centre, double width, double gain)
+        {
+            const double d = (frequency - centre) / width;
+            return gain * std::exp (-d * d);
+        };
+
+        return 0.10
+             + peak (700.0, 260.0, 1.00)
+             + peak (1150.0, 380.0, 0.62)
+             + peak (2800.0, 700.0, 0.24);
+    }
+
+    PartialBank<32> bank;
+    Envelope envelope;
+    double amplitude { 0.0 };
+    double vibratoPhase { 0.0 };
+    double vibratoInc { 0.0 };
+    double vibratoDepth { 0.0 };
+    double vibratoRampInc { 0.0 };
+};
+
 // ── Los instrumentos ────────────────────────────────────────────────────────
 
 // Los recortes de ganancia salen de medir el pico de una nota sola y llevarlos
@@ -404,12 +676,66 @@ public:
     explicit Vibraphone (int voices = 32) : PolyphonicInstrument (voices, "Vibráfono", 0.75) {}
 };
 
+class Marimba final : public PolyphonicInstrument<MarimbaVoice>
+{
+public:
+    explicit Marimba (int voices = 32) : PolyphonicInstrument (voices, "Marimba", 0.63) {}
+};
+
+class Flute final : public PolyphonicInstrument<FluteVoice>
+{
+public:
+    explicit Flute (int voices = 16) : PolyphonicInstrument (voices, "Flauta", 0.50) {}
+};
+
+class Choir final : public PolyphonicInstrument<ChoirVoice>
+{
+public:
+    // Doce voces con 32 parciales cada una. Un coro tampoco canta acordes de
+    // veinte notas, así que el techo no se nota tocando.
+    explicit Choir (int voices = 12) : PolyphonicInstrument (voices, "Coro", 0.47) {}
+};
+
+class Guitar final : public PolyphonicInstrument<GuitarVoice>
+{
+public:
+    // Seis cuerdas tiene una guitarra; se dejan 16 porque con pedal las notas
+    // se solapan y quedarse sin voces se oye como un corte.
+    explicit Guitar (int voices = 16) : PolyphonicInstrument (voices, "Guitarra", 0.76) {}
+};
+
+class Harpsichord final : public PolyphonicInstrument<HarpsichordVoice>
+{
+public:
+    explicit Harpsichord (int voices = 24) : PolyphonicInstrument (voices, "Clavecín", 0.68) {}
+};
+
 // ── Catálogo ────────────────────────────────────────────────────────────────
 
+/** El catálogo.
+
+    **Los números de aquí son un contrato de persistencia**: `settings.json`
+    guarda el instrumento elegido como entero, así que los nuevos se añaden
+    siempre al final y ninguno cambia de valor. El orden en que se enseñan en
+    la ventana es otra cosa y lo decide `allInstrumentIds()`. */
 enum class InstrumentId
 {
-    piano, electricPiano, organ, accordion, strings, vibraphone
+    piano, electricPiano, organ, accordion, strings, vibraphone,
+    guitar, harpsichord, marimba, flute, choir
 };
+
+/** Todos, en el orden en que tiene sentido enseñarlos: primero los de teclado,
+    luego los de fuelle y cuerda pulsada, luego los que sostienen y al final los
+    de percusión y viento.
+
+    Es la **única** lista del catálogo. La ventana construye el desplegable con
+    ella, los ajustes validan con ella y los tests recorren con ella, de modo
+    que un instrumento nuevo no se puede quedar sin probar por olvido. */
+const std::vector<InstrumentId>& allInstrumentIds();
+
+/** True si el entero guardado en los ajustes corresponde a un instrumento.
+    Un `settings.json` de una versión más nueva no debe romper nada. */
+bool isValidInstrumentId (int value);
 
 /** Nombre para la interfaz. En UTF-8. */
 juce::String instrumentName (InstrumentId id);
