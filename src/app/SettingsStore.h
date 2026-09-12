@@ -28,6 +28,12 @@ struct Settings
 
     juce::String midiInputName;
 
+    /** Qué salida escucha Keyla cuando enciendes la escucha. Vacío = la
+        predeterminada de Windows, que es por donde suena el navegador. No se
+        arranca sola al abrir: encender una captura sin que nadie la haya pedido
+        es justo el tipo de cosa que luego nadie sabe por qué está pasando. */
+    juce::String listenDeviceName;
+
     core::InstrumentId instrument { core::InstrumentId::piano };
     float masterVolume { 0.8f };
     float reverbMix { 0.12f };

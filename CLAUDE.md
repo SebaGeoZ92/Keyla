@@ -285,6 +285,14 @@ Medido con `audio_probe`, no supuesto:
   modo que hay que elegir la salida física a mano — `--audio-out` en las
   herramientas, y en la app se prefiere automáticamente la física y se avisa si
   la elegida es virtual.
+- **Para escuchar, el predeterminado de Windows aquí no sirve.** Medido con
+  `Keyla.exe --listen-test`: `Sonar - Chat` es el endpoint predeterminado tanto
+  para `eConsole` como para `eMultimedia`, y en loopback **no entrega ni un
+  sample**. `Sonar - Gaming` y el H510-PRO físico sí, y con los dos se saca la
+  progresión de prueba entera. Ojo al contraste con la nota de arriba: para
+  *reproducir*, Gaming no daba callbacks y Chat sí; para *escuchar* es al revés.
+  Son dispositivos virtuales y no se comportan igual en las dos direcciones, así
+  que de ninguno se puede deducir el otro.
 - **El H510-PRO (inalámbrico de 2,4 GHz) sólo admite buffers de 144 en adelante**
   a 48 kHz en exclusivo, y declara 6 ms de latencia de salida. En modo compartido
   el mínimo sube a 480. Los 128 samples del doc 03 no son universales.

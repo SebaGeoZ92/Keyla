@@ -1,3 +1,4 @@
+#include "ListeningEngine.h"
 #include "StartupShortcut.h"
 #include "ui/MainComponent.h"
 
@@ -34,6 +35,16 @@ public:
             return;
         }
 
+        // Comprobar la escucha sin ventana y sin humano. Es la única forma de
+        // saber si la captura de WASAPI recibe algo de verdad: lo demás que se
+        // puede decir de ella es que compila.
+        if (commandLine.contains ("--listen-test"))
+        {
+            runListenTest (commandLine);
+            quit();
+            return;
+        }
+
         // Ojo con el orden: `--startup-on` contiene `--startup`, así que esto
         // tiene que ir después del bloque de arriba.
         const auto unattended = commandLine.contains (startup::unattendedFlag);
@@ -60,6 +71,85 @@ public:
     }
 
 private:
+    /** Escucha la salida predeterminada durante unos segundos y escribe lo que
+        haya oído. Sin ventana: sirve para verificar la captura desde un script. */
+    static void runListenTest (const juce::String& commandLine)
+    {
+        const auto seconds = commandLine.contains ("--seconds")
+                           ? commandLine.fromFirstOccurrenceOf ("--seconds", false, false)
+                                        .trim().upToFirstOccurrenceOf (" ", false, false).getIntValue()
+                           : 12;
+
+        const auto outPath = commandLine.contains ("--out")
+                           ? commandLine.fromFirstOccurrenceOf ("--out", false, false).trim()
+                                        .upToFirstOccurrenceOf (" ", false, false)
+                           : juce::String();
+
+        ListeningEngine engine;
+        juce::StringArray log;
+
+        for (const auto& name : ListeningEngine::availableOutputs())
+            log.add ("salida disponible: " + name);
+
+        // Permite apuntar a una salida concreta por indice, para barrer todas
+        // desde un script sin pelearse con nombres que llevan espacios.
+        juce::String target;
+
+        if (commandLine.contains ("--device-index"))
+        {
+            const auto index = commandLine.fromFirstOccurrenceOf ("--device-index", false, false)
+                                          .trim().upToFirstOccurrenceOf (" ", false, false).getIntValue();
+            const auto all = ListeningEngine::availableOutputs();
+
+            if (index > 0 && index < all.size())
+                target = all[index];
+        }
+
+        log.add ("pedido: " + (target.isEmpty() ? juce::String ("(predeterminada)") : target));
+
+        const auto error = engine.start (target);
+
+        if (error.isNotEmpty())
+        {
+            log.add ("ERROR: " + error);
+        }
+        else
+        {
+            log.add ("escuchando: " + engine.reading().deviceName);
+
+            juce::String lastChord;
+
+            for (int tick = 0; tick < juce::jmax (1, seconds) * 4; ++tick)
+            {
+                juce::Thread::sleep (250);
+
+                const auto reading = engine.reading();
+
+                if (reading.chordSymbol.isNotEmpty() && reading.chordSymbol != lastChord)
+                {
+                    lastChord = reading.chordSymbol;
+                    log.add ("acorde: " + lastChord
+                             + "   confianza " + juce::String (reading.confidence, 3)
+                             + "   margen " + juce::String (reading.margin, 3));
+                }
+            }
+
+            const auto final = engine.reading();
+            log.add ("llega audio: " + juce::String (final.receivingAudio ? "si" : "NO"));
+            log.add ("hay musica: " + juce::String (final.hearingMusic ? "si" : "no"));
+            log.add ("tonalidad: " + (final.keyName.isEmpty() ? juce::String ("(ninguna)") : final.keyName));
+            log.add ("progresion: " + final.progression);
+            log.add ("ventana de analisis: " + juce::String (final.windowSeconds, 3) + " s");
+        }
+
+        engine.stop();
+
+        const auto text = log.joinIntoString ("\n") + "\n";
+
+        if (outPath.isNotEmpty())
+            juce::File (outPath).replaceWithText (text, false, false, "\n");
+    }
+
     class MainWindow final : public juce::DocumentWindow
     {
     public:

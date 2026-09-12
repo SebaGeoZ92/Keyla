@@ -28,6 +28,7 @@ Settings Settings::load()
 
     settings.audioOutputName = get ("audioOutput").toString();
     settings.midiInputName = get ("midiInput").toString();
+    settings.listenDeviceName = get ("listenDevice").toString();
 
     if (const auto value = get ("bufferSize"); ! value.isVoid())
         settings.bufferSize = juce::jlimit (16, 8192, static_cast<int> (value));
@@ -79,6 +80,7 @@ void Settings::save() const
     root->setProperty ("bufferSize", bufferSize);
     root->setProperty ("exclusive", exclusive);
     root->setProperty ("midiInput", midiInputName);
+    root->setProperty ("listenDevice", listenDeviceName);
     root->setProperty ("instrument", static_cast<int> (instrument));
     root->setProperty ("masterVolume", masterVolume);
     root->setProperty ("reverbMix", reverbMix);

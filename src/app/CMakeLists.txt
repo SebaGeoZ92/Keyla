@@ -20,11 +20,14 @@ target_sources(keyla PRIVATE
         AudioDeviceHost.cpp
         SettingsStore.cpp
         StartupShortcut.cpp
+        LoopbackCapture.cpp
+        ListeningEngine.cpp
         MidiInputHost.cpp
         ui/MainComponent.cpp
         ui/ExerciseView.cpp
         ui/NowPlayingView.cpp
-        ui/PianoKeyboardView.cpp)
+        ui/PianoKeyboardView.cpp
+        ui/ListeningView.cpp)
 
 target_compile_definitions(keyla PRIVATE
         JUCE_STANDALONE_APPLICATION=1

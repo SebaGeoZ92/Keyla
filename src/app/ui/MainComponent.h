@@ -2,8 +2,10 @@
 
 #include "../AudioDeviceHost.h"
 #include "../MidiInputHost.h"
+#include "../ListeningEngine.h"
 #include "../SettingsStore.h"
 #include "ExerciseView.h"
+#include "ListeningView.h"
 #include "NowPlayingView.h"
 #include "PianoKeyboardView.h"
 
@@ -62,6 +64,8 @@ private:
     void pumpNoteEvents();
     void finishTempoAttempt();
     void importMidiExercise();
+    void rebuildListenDeviceList();
+    void applyListening();
     void updateUnattendedState();
     void setOpenWithWindows (bool shouldOpen);
 
@@ -79,6 +83,12 @@ private:
     // ── UI ──────────────────────────────────────────────────────────────────
     PianoKeyboardView keyboardView;
     NowPlayingView nowPlayingView;
+
+    /** La escucha del ordenador. Vive aquí y no en AudioDeviceHost porque no
+        tiene nada que ver con el instrumento: es otra entrada, otro hilo y otro
+        ciclo de vida. */
+    ListeningEngine listening;
+    ListeningView listeningView;
     ExerciseView exerciseView;
 
     // El profesor vive en el dominio de sesión: se alimenta de la FIFO de
@@ -121,6 +131,8 @@ private:
     juce::ComboBox learnTargetBox;
     juce::TextButton panicButton { "Silencio" };
     juce::ToggleButton startupToggle { "Abrir con Windows" };
+    juce::ToggleButton listenToggle { "Escuchar el PC" };
+    juce::ComboBox listenDeviceBox;
     juce::TextButton learnButton { "Aprender" };
     juce::ComboBox kindBox, tonicBox, variantBox, optionBox, handBox, modeBox;
     juce::TextButton exerciseButton { "Empezar" };

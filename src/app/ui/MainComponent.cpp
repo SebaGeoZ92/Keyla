@@ -161,6 +161,9 @@ MainComponent::MainComponent (bool isUnattended)
     addAndMakeVisible (messageLabel);
     addAndMakeVisible (panicButton);
     addAndMakeVisible (startupToggle);
+    addAndMakeVisible (listenToggle);
+    addAndMakeVisible (listenDeviceBox);
+    addAndMakeVisible (listeningView);
 
     exclusiveToggle.setToggleState (prefs.exclusive, juce::dontSendNotification);
     exclusiveToggle.onClick = [this]
@@ -193,6 +196,14 @@ MainComponent::MainComponent (bool isUnattended)
     // el acceso directo está en la carpeta de Inicio o no lo está.
     startupToggle.setToggleState (startup::isEnabled(), juce::dontSendNotification);
     startupToggle.onClick = [this] { setOpenWithWindows (startupToggle.getToggleState()); };
+
+    rebuildListenDeviceList();
+    listenToggle.onClick = [this] { applyListening(); };
+    listenDeviceBox.onChange = [this]
+    {
+        if (listenToggle.getToggleState())
+            applyListening();
+    };
 
     // ── Constructor de ejercicios ───────────────────────────────────────────
     kindBox.addItem ("Escala", 1);
@@ -254,6 +265,10 @@ MainComponent::MainComponent (bool isUnattended)
     messageLabel.setFont (juce::FontOptions (13.0f));
 
     // ── Arranque ────────────────────────────────────────────────────────────
+    //
+    // La escucha **no** arranca sola aunque se recuerde la salida: abrir una
+    // captura sin que nadie la haya pedido es justo el tipo de cosa que luego
+    // nadie sabe por qué está pasando.
     rebuildAudioDeviceList();
     rebuildMidiDeviceList();
 
@@ -262,7 +277,7 @@ MainComponent::MainComponent (bool isUnattended)
     else
         openSelectedAudioDevice();
 
-    setSize (1100, 636);
+    setSize (1100, 680);
     startTimerHz (60);
 }
 
@@ -808,8 +823,55 @@ void MainComponent::setOpenWithWindows (bool shouldOpen)
     showMessage (error, true);
 }
 
+void MainComponent::rebuildListenDeviceList()
+{
+    const auto previous = listenDeviceBox.getText().isNotEmpty() ? listenDeviceBox.getText()
+                                                                 : prefs.listenDeviceName;
+
+    listenDeviceBox.clear (juce::dontSendNotification);
+
+    const auto outputs = ListeningEngine::availableOutputs();
+
+    for (int i = 0; i < outputs.size(); ++i)
+        listenDeviceBox.addItem (outputs[i], i + 1);
+
+    // Por nombre, no por índice. Y por defecto la predeterminada de Windows,
+    // que es por donde suena el navegador — que es lo que uno quiere escuchar.
+    const int index = juce::jmax (0, outputs.indexOf (previous));
+    listenDeviceBox.setSelectedItemIndex (index, juce::dontSendNotification);
+}
+
+void MainComponent::applyListening()
+{
+    listening.stop();
+
+    if (! listenToggle.getToggleState())
+    {
+        prefs.listenDeviceName = listenDeviceBox.getText();
+        showMessage ("Escucha apagada."_u8, false);
+        return;
+    }
+
+    const auto wanted = listenDeviceBox.getText();
+    prefs.listenDeviceName = wanted;
+
+    const auto error = listening.start (wanted == ListeningEngine::defaultOutputLabel()
+                                            ? juce::String()
+                                            : wanted);
+
+    if (error.isNotEmpty())
+    {
+        listenToggle.setToggleState (false, juce::dontSendNotification);
+        showMessage (error, true);
+        return;
+    }
+
+    showMessage ("Escuchando. Pon una cancion y Keyla ira sacando los acordes."_u8, false);
+}
+
 void MainComponent::saveSettings()
 {
+    prefs.listenDeviceName = listenDeviceBox.getText();
     prefs.volumeController = audioHost.controllerNumber (ControlTarget::volume);
     prefs.tremoloController = audioHost.controllerNumber (ControlTarget::tremolo);
     prefs.reverbController = audioHost.controllerNumber (ControlTarget::reverb);
@@ -846,6 +908,7 @@ void MainComponent::timerCallback()
 
     keyboardView.updateFrom (snapshot);
     nowPlayingView.updateFrom (snapshot);
+    listeningView.updateFrom (listening.reading());
     pumpNoteEvents();
     updateUnattendedState();
 
@@ -948,6 +1011,10 @@ void MainComponent::resized()
     panicButton.setBounds (secondRow.removeFromLeft (100));
     secondRow.removeFromLeft (20);
     instrumentBox.setBounds (secondRow.removeFromLeft (180));
+    secondRow.removeFromLeft (16);
+    listenToggle.setBounds (secondRow.removeFromLeft (140));
+    secondRow.removeFromLeft (4);
+    listenDeviceBox.setBounds (secondRow.removeFromLeft (230));
 
     area.removeFromTop (8);
 
@@ -1001,6 +1068,8 @@ void MainComponent::resized()
 
     area.removeFromTop (6);
     nowPlayingView.setBounds (area.removeFromTop (40));
+    area.removeFromTop (2);
+    listeningView.setBounds (area.removeFromTop (36));
     area.removeFromTop (6);
 
     statusLabel.setBounds (area.removeFromBottom (22));
