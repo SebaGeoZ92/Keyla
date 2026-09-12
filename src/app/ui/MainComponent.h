@@ -112,7 +112,13 @@ private:
     juce::ToggleButton exclusiveToggle { "Modo exclusivo (menos latencia)" };
     juce::Slider reverbSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::Slider volumeSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
-    juce::Label reverbLabel, volumeLabel, statusLabel, messageLabel;
+    juce::Slider tremoloSlider { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
+    juce::Label reverbLabel, volumeLabel, tremoloLabel, statusLabel, messageLabel;
+
+    /** A qué destino aprende el botón. Un mando del teclado puede mover el
+        volumen, el trémolo o la sala, y sólo el usuario sabe cuál quiere en
+        cuál. */
+    juce::ComboBox learnTargetBox;
     juce::TextButton panicButton { "Silencio" };
     juce::ToggleButton startupToggle { "Abrir con Windows" };
     juce::TextButton learnButton { "Aprender" };
@@ -145,7 +151,11 @@ private:
 
     juce::String pendingMessage;
     bool messageIsError { false };
-    float shownVolume { -1.0f };        // para no pelearse con el mando del teclado
+    // Lo que la ventana está enseñando ahora mismo. Sirve para no pelearse con
+    // los mandos del teclado: si el valor no ha cambiado, no se toca el control.
+    float shownVolume { -1.0f };
+    float shownReverb { -1.0f };
+    float shownTremolo { -1.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

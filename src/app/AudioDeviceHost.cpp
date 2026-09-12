@@ -316,6 +316,7 @@ void AudioDeviceHost::audioDeviceAboutToStart (juce::AudioIODevice* startingDevi
     transport.prepare (rate);
     keyboard.reset();
     limiter.prepare (rate);
+    tremolo.prepare (rate);
 
     // Toda la memoria de la reverberación se reserva aquí, con el stream
     // parado: en el callback no se asigna nada (invariante 1).
@@ -444,18 +445,29 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
             lastControllerValue.store (value, std::memory_order_relaxed);
 
             // Modo aprender: el primer control que se mueva se queda con el
-            // volumen. Se ignora CC64, que es el pedal, y CC123, que es el
-            // pánico: asignarles el volumen sería una trampa cruel.
-            if (learningVolume.load (std::memory_order_relaxed)
-                && number != 64 && number < 120)
+            // destino elegido. Se ignora CC64, que es el pedal, y CC123, que es
+            // el pánico: asignarles un mando sería una trampa cruel.
+            const int learn = learning.load (std::memory_order_relaxed);
+
+            if (learn >= 0 && number != 64 && number < 120)
             {
-                volumeController.store (number, std::memory_order_relaxed);
-                learningVolume.store (false, std::memory_order_relaxed);
+                controllerNumbers[static_cast<std::size_t> (learn)].store (number, std::memory_order_relaxed);
+                learning.store (-1, std::memory_order_relaxed);
             }
 
-            if (number == volumeController.load (std::memory_order_relaxed))
-                targetVolume.store (static_cast<float> (value) / 127.0f,
-                                    std::memory_order_relaxed);
+            // Un mismo CC puede quedar asignado a dos destinos y entonces mueve
+            // los dos. No se impide a propósito: es raro, se ve en seguida y
+            // arreglarlo es volver a aprender el mando.
+            const float normalised = static_cast<float> (value) / 127.0f;
+
+            if (number == controllerNumbers[0].load (std::memory_order_relaxed))
+                targetVolume.store (normalised, std::memory_order_relaxed);
+
+            if (number == controllerNumbers[1].load (std::memory_order_relaxed))
+                targetTremoloDepth.store (normalised, std::memory_order_relaxed);
+
+            if (number == controllerNumbers[2].load (std::memory_order_relaxed))
+                targetReverbMix.store (normalised, std::memory_order_relaxed);
         }
     }
 
@@ -488,6 +500,14 @@ void AudioDeviceHost::audioDeviceIOCallbackWithContext (const float* const*,
 
         float* left = outputChannelData[0];
         float* right = numOutputChannels > 1 ? outputChannelData[1] : nullptr;
+
+        // ── Trémolo ─────────────────────────────────────────────────────────
+        //
+        // Antes de la reverberación a propósito: así la cola de la sala suaviza
+        // el vaivén en vez de picarlo. Es el orden en que van los dos en un
+        // amplificador de verdad, y suena mejor por el mismo motivo.
+        tremolo.setDepth (targetTremoloDepth.load (std::memory_order_relaxed));
+        tremolo.process (left, right, numSamples);
 
         // ── Reverberación ───────────────────────────────────────────────────
         //
@@ -591,6 +611,8 @@ void AudioDeviceHost::publishSnapshot (int numSamples, double) noexcept
     auto* current = instrument.load (std::memory_order_acquire);
     snapshot.activeVoices = current != nullptr ? current->activeVoiceCount() : 0;
     snapshot.masterVolume = targetVolume.load (std::memory_order_relaxed);
+    snapshot.reverbMix = targetReverbMix.load (std::memory_order_relaxed);
+    snapshot.tremoloDepth = targetTremoloDepth.load (std::memory_order_relaxed);
     snapshot.lastControllerNumber = lastController.load (std::memory_order_relaxed);
     snapshot.lastControllerValue = lastControllerValue.load (std::memory_order_relaxed);
 

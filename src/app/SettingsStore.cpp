@@ -53,6 +53,15 @@ Settings Settings::load()
     if (const auto value = get ("volumeController"); ! value.isVoid())
         settings.volumeController = juce::jlimit (0, 127, static_cast<int> (value));
 
+    if (const auto value = get ("tremoloController"); ! value.isVoid())
+        settings.tremoloController = juce::jlimit (0, 127, static_cast<int> (value));
+
+    if (const auto value = get ("reverbController"); ! value.isVoid())
+        settings.reverbController = juce::jlimit (0, 127, static_cast<int> (value));
+
+    if (const auto value = get ("tremoloDepth"); ! value.isVoid())
+        settings.tremoloDepth = juce::jlimit (0.0f, 1.0f, static_cast<float> (static_cast<double> (value)));
+
     if (const auto value = get ("tempoBpm"); ! value.isVoid())
         settings.tempoBpm = juce::jlimit (20.0, 300.0, static_cast<double> (value));
 
@@ -74,6 +83,9 @@ void Settings::save() const
     root->setProperty ("masterVolume", masterVolume);
     root->setProperty ("reverbMix", reverbMix);
     root->setProperty ("volumeController", volumeController);
+    root->setProperty ("tremoloController", tremoloController);
+    root->setProperty ("reverbController", reverbController);
+    root->setProperty ("tremoloDepth", tremoloDepth);
     root->setProperty ("tempoBpm", tempoBpm);
     root->setProperty ("perceptualOffsetMs", perceptualOffsetMs);
 

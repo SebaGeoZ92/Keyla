@@ -6,6 +6,7 @@
 
 add_library(keyla_core STATIC
         audio/Limiter.h
+        audio/Tremolo.h
         text/Utf8.h
         time/TimeSignature.h
         time/Transport.h

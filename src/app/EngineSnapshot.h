@@ -42,6 +42,12 @@ struct EngineSnapshot
         que enterarse de los cambios que no ha hecho ella. */
     float masterVolume { 1.0f };
 
+    /** Sala y trémolo. Viajan en el snapshot por el mismo motivo que el
+        volumen: si un mando del teclado los mueve, los controles de la ventana
+        tienen que enterarse de un cambio que no han hecho ellos. */
+    float reverbMix { 0.0f };
+    float tremoloDepth { 0.0f };
+
     /** Último control continuo recibido, para saber qué manda cada teclado sin
         tener que adivinarlo. -1 si todavía no ha llegado ninguno. */
     int lastControllerNumber { -1 };

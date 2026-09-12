@@ -7,6 +7,7 @@
 // visto sin hardware y sin oídos.
 
 #include <core/audio/Limiter.h>
+#include <core/audio/Tremolo.h>
 #include <core/instrument/Instruments.h>
 #include <core/instrument/StruckStringSynth.h>
 
@@ -649,4 +650,126 @@ TEST_CASE ("Ningun instrumento se sale del presupuesto de CPU", "[instrument][ca
         // no discutir un 3 %.
         CHECK (load < 0.25);
     }
+}
+
+namespace
+{
+    /** Pasa una señal constante por el trémolo: así la salida **es** la
+        ganancia, y se puede medir sin despejar nada. */
+    struct TremoloRun
+    {
+        std::vector<float> left, right, mono;
+    };
+
+    TremoloRun runTremolo (float depth, double seconds)
+    {
+        Tremolo tremolo;
+        tremolo.prepare (sampleRate);
+        tremolo.setDepth (depth);
+
+        const int total = static_cast<int> (seconds * sampleRate);
+        TremoloRun run;
+
+        std::vector<float> left (static_cast<std::size_t> (blockSize));
+        std::vector<float> right (static_cast<std::size_t> (blockSize));
+
+        for (int done = 0; done < total; done += blockSize)
+        {
+            std::fill (left.begin(), left.end(), 1.0f);
+            std::fill (right.begin(), right.end(), 1.0f);
+
+            tremolo.process (left.data(), right.data(), blockSize);
+
+            for (int i = 0; i < blockSize; ++i)
+            {
+                run.left.push_back (left[static_cast<std::size_t> (i)]);
+                run.right.push_back (right[static_cast<std::size_t> (i)]);
+                run.mono.push_back (left[static_cast<std::size_t> (i)]
+                                  + right[static_cast<std::size_t> (i)]);
+            }
+        }
+
+        return run;
+    }
+
+    double swingOf (const std::vector<float>& values)
+    {
+        const auto low = *std::min_element (values.begin(), values.end());
+        const auto high = *std::max_element (values.begin(), values.end());
+        const double mean = 0.5 * (low + high);
+
+        return mean > 0.0 ? (high - low) / mean : 0.0;
+    }
+}
+
+TEST_CASE ("El tremolo apagado no toca la senal", "[tremolo]")
+{
+    // Un efecto que no está al máximo debe ser transparente del todo, no "casi".
+    const auto run = runTremolo (0.0f, 0.5);
+
+    REQUIRE (! run.left.empty());
+
+    for (auto value : run.left)
+        CHECK (value == 1.0f);
+}
+
+TEST_CASE ("El tremolo se sigue oyendo si la salida se suma a mono", "[tremolo]")
+{
+    // **El test que justifica el diseño.** Un trémolo de Rhodes de verdad es un
+    // paneo: los dos canales van justo al revés, suena precioso en estéreo y
+    // desaparece por completo en cuanto algo lo suma a mono —una barra de
+    // sonido en modo mono, un altavoz de portátil, un Bluetooth barato—, porque
+    // la suma de dos senos opuestos es una constante.
+    //
+    // Aquí los canales van desfasados un tercio de ciclo justamente para que
+    // eso no pase. Si alguien "mejora" el efecto poniéndolos en oposición, este
+    // test se cae, y se cae por el motivo correcto.
+    const auto run = runTremolo (1.0f, 1.0);
+
+    CHECK (swingOf (run.left) > 0.5);
+    CHECK (swingOf (run.right) > 0.5);
+
+    std::cout << "  [tremolo] vaiven por canal " << swingOf (run.left)
+              << "   sumado a mono " << swingOf (run.mono) << '\n';
+
+    CHECK (swingOf (run.mono) > 0.2);
+}
+
+TEST_CASE ("El tremolo no amplifica", "[tremolo]")
+{
+    // Modula hacia abajo, nunca hacia arriba: si subiera por encima de la
+    // unidad, subir el mando haría saltar el limitador y el instrumento
+    // cambiaría de carácter por culpa de un efecto.
+    for (float depth : { 0.25f, 0.5f, 1.0f })
+    {
+        const auto run = runTremolo (depth, 0.5);
+
+        for (auto value : run.left)
+            CHECK (value <= 1.0001f);
+
+        for (auto value : run.right)
+            CHECK (value <= 1.0001f);
+    }
+}
+
+TEST_CASE ("El tremolo va a la velocidad que dice", "[tremolo]")
+{
+    const auto run = runTremolo (1.0f, 3.0);
+
+    // Se cuentan los ciclos por cruces de la media, que para una senoide pura
+    // da la frecuencia sin necesidad de nada más.
+    const auto low = *std::min_element (run.left.begin(), run.left.end());
+    const auto high = *std::max_element (run.left.begin(), run.left.end());
+    const float mean = 0.5f * (low + high);
+
+    int crossings = 0;
+
+    for (std::size_t i = 1; i < run.left.size(); ++i)
+        if (run.left[i - 1] <= mean && run.left[i] > mean)
+            ++crossings;
+
+    const double measured = crossings / 3.0;
+
+    INFO ("medido " << measured << " Hz");
+    CHECK (std::abs (measured - Tremolo::defaultRateHz) < 0.3);
 }

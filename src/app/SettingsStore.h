@@ -31,7 +31,13 @@ struct Settings
     core::InstrumentId instrument { core::InstrumentId::piano };
     float masterVolume { 0.8f };
     float reverbMix { 0.12f };
+    float tremoloDepth { 0.0f };
+
+    /** Qué CC mueve cada cosa. Por defecto los estándar, pero se reaprenden:
+        hay controladores que no respetan ninguno. */
     int volumeController { 7 };
+    int tremoloController { 1 };        // rueda de modulación
+    int reverbController { 91 };        // envío a reverberación
 
     double tempoBpm { 90.0 };
 

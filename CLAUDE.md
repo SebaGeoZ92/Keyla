@@ -110,6 +110,21 @@ por barrido y el PNG escrito con zlib— y CMake se lo pasa a juceaide por
 `ICON_BIG`. El diseño se edita ahí, no en un PNG suelto. Criterio con el que se
 eligió: lo que decide un icono es si se reconoce a 16 px, no cómo se ve a 256.
 
+**Mandos del teclado, aprendibles y con tres destinos.** Volumen, trémolo y
+sala. El aprendizaje era antes cosa sólo del volumen; en cuanto apareció el
+segundo destino se generalizó a `ControlTarget`, y añadir uno más es una línea
+en el enum y un caso en el ruteo. Por defecto CC7, CC1 y CC91, que son los
+estándar — pero se reaprenden, porque hay controladores que no respetan ninguno.
+
+El **trémolo** va antes de la reverberación, como en un amplificador. Detalle
+que no es cosmético: los dos canales van desfasados **un tercio de ciclo**, no
+medio. Un trémolo de Rhodes de verdad es un paneo con los canales en oposición,
+suena mejor en estéreo y **desaparece del todo** en cuanto algo suma la salida a
+mono —barra de sonido en modo mono, altavoz de portátil, Bluetooth barato—
+porque la suma de dos senos opuestos es constante. Con un tercio de ciclo hay
+movimiento estéreo y la suma en mono sigue vaivén: medido, 93 %. Hay un test
+que se cae si alguien lo "mejora" poniéndolos en oposición.
+
 **Fase 3 empezada**: modo espera funcionando. Generador de escalas y arpegios,
 máquina de estados que no avanza hasta que aciertas, evaluación de alturas
 —nunca de ritmo, que aquí no existe— y adaptación al rango del teclado.

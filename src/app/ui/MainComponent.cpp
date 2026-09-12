@@ -51,7 +51,10 @@ MainComponent::MainComponent (bool isUnattended)
     audioHost.setInstrument (instrument.get());
     audioHost.setReverbMix (prefs.reverbMix);
     audioHost.setMasterVolume (prefs.masterVolume);
-    audioHost.setVolumeControllerNumber (prefs.volumeController);
+    audioHost.setTremoloDepth (prefs.tremoloDepth);
+    audioHost.setControllerNumber (ControlTarget::volume, prefs.volumeController);
+    audioHost.setControllerNumber (ControlTarget::tremolo, prefs.tremoloController);
+    audioHost.setControllerNumber (ControlTarget::reverb, prefs.reverbController);
 
     // ── Controles ───────────────────────────────────────────────────────────
     addAndMakeVisible (audioDeviceBox);
@@ -64,6 +67,9 @@ MainComponent::MainComponent (bool isUnattended)
     addAndMakeVisible (volumeSlider);
     addAndMakeVisible (volumeLabel);
     addAndMakeVisible (learnButton);
+    addAndMakeVisible (learnTargetBox);
+    addAndMakeVisible (tremoloSlider);
+    addAndMakeVisible (tremoloLabel);
     addAndMakeVisible (exerciseView);
     addAndMakeVisible (kindBox);
     addAndMakeVisible (tonicBox);
@@ -113,21 +119,41 @@ MainComponent::MainComponent (bool isUnattended)
         prefs.masterVolume = static_cast<float> (volumeSlider.getValue());
     };
 
-    // Aprender el mando del teclado en vez de suponer que manda CC7: hay
-    // controladores cuyo control de volumen no manda MIDI en absoluto, y otros
-    // que usan un número distinto. Preguntárselo al teclado es lo único fiable.
+    tremoloLabel.setText ("Trémolo"_u8, juce::dontSendNotification);
+    tremoloLabel.setFont (juce::FontOptions (13.0f));
+    tremoloLabel.setColour (juce::Label::textColourId, juce::Colour { 0xff9aa2ad });
+
+    tremoloSlider.setRange (0.0, 1.0, 0.01);
+    tremoloSlider.setValue (prefs.tremoloDepth, juce::dontSendNotification);
+    tremoloSlider.onValueChange = [this]
+    {
+        audioHost.setTremoloDepth (static_cast<float> (tremoloSlider.getValue()));
+        prefs.tremoloDepth = static_cast<float> (tremoloSlider.getValue());
+    };
+
+    learnTargetBox.addItem ("Volumen", 1);
+    learnTargetBox.addItem ("Trémolo"_u8, 2);
+    learnTargetBox.addItem ("Sala", 3);
+    learnTargetBox.setSelectedId (1, juce::dontSendNotification);
+
+    // Aprender el mando del teclado en vez de suponer los CC estándar: hay
+    // controladores cuyo mando no manda ninguno de ellos, y otros que usan
+    // números distintos. Preguntárselo al teclado es lo único fiable.
     learnButton.onClick = [this]
     {
-        if (audioHost.isLearningVolumeController())
+        if (audioHost.isLearning())
         {
             audioHost.cancelLearn();
             showMessage ("Aprendizaje cancelado.", false);
+            return;
         }
-        else
-        {
-            audioHost.learnVolumeController();
-            showMessage ("Mueve ahora el mando del teclado que quieras usar como volumen."_u8, false);
-        }
+
+        const auto target = static_cast<ControlTarget> (learnTargetBox.getSelectedId() - 1);
+        audioHost.learnController (target);
+
+        showMessage ("Mueve ahora el mando del teclado que quieras usar para "_u8
+                         + learnTargetBox.getText().toLowerCase() + ".",
+                     false);
     };
     addAndMakeVisible (keyboardView);
     addAndMakeVisible (nowPlayingView);
@@ -236,7 +262,7 @@ MainComponent::MainComponent (bool isUnattended)
     else
         openSelectedAudioDevice();
 
-    setSize (1100, 600);
+    setSize (1100, 636);
     startTimerHz (60);
 }
 
@@ -784,7 +810,10 @@ void MainComponent::setOpenWithWindows (bool shouldOpen)
 
 void MainComponent::saveSettings()
 {
-    prefs.volumeController = audioHost.volumeControllerNumber();
+    prefs.volumeController = audioHost.controllerNumber (ControlTarget::volume);
+    prefs.tremoloController = audioHost.controllerNumber (ControlTarget::tremolo);
+    prefs.reverbController = audioHost.controllerNumber (ControlTarget::reverb);
+    prefs.tremoloDepth = audioHost.tremoloDepth();
     prefs.tempoBpm = tempoSlider.getValue();
     prefs.masterVolume = audioHost.masterVolume();
     prefs.save();
@@ -828,6 +857,21 @@ void MainComponent::timerCallback()
     {
         shownVolume = snapshot.masterVolume;
         volumeSlider.setValue (snapshot.masterVolume, juce::dontSendNotification);
+        prefs.masterVolume = snapshot.masterVolume;
+    }
+
+    if (std::abs (snapshot.tremoloDepth - shownTremolo) > 0.004f)
+    {
+        shownTremolo = snapshot.tremoloDepth;
+        tremoloSlider.setValue (snapshot.tremoloDepth, juce::dontSendNotification);
+        prefs.tremoloDepth = snapshot.tremoloDepth;
+    }
+
+    if (std::abs (snapshot.reverbMix - shownReverb) > 0.004f)
+    {
+        shownReverb = snapshot.reverbMix;
+        reverbSlider.setValue (snapshot.reverbMix, juce::dontSendNotification);
+        prefs.reverbMix = snapshot.reverbMix;
     }
 
     if (pendingMessage.isNotEmpty())
@@ -904,14 +948,25 @@ void MainComponent::resized()
     panicButton.setBounds (secondRow.removeFromLeft (100));
     secondRow.removeFromLeft (20);
     instrumentBox.setBounds (secondRow.removeFromLeft (180));
-    secondRow.removeFromLeft (12);
-    volumeLabel.setBounds (secondRow.removeFromLeft (62));
-    volumeSlider.setBounds (secondRow.removeFromLeft (130));
-    secondRow.removeFromLeft (6);
-    learnButton.setBounds (secondRow.removeFromLeft (86));
-    secondRow.removeFromLeft (12);
-    reverbLabel.setBounds (secondRow.removeFromLeft (40));
-    reverbSlider.setBounds (secondRow.removeFromLeft (130));
+
+    area.removeFromTop (8);
+
+    // Los tres mandos de sonido juntos y el aprendizaje al lado: con el
+    // trémolo ya no cabían en la fila de los dispositivos, y mezclar "qué
+    // aparato uso" con "cómo suena" nunca fue buena idea.
+    auto effectsRow = area.removeFromTop (28);
+    volumeLabel.setBounds (effectsRow.removeFromLeft (62));
+    volumeSlider.setBounds (effectsRow.removeFromLeft (130));
+    effectsRow.removeFromLeft (12);
+    reverbLabel.setBounds (effectsRow.removeFromLeft (40));
+    reverbSlider.setBounds (effectsRow.removeFromLeft (130));
+    effectsRow.removeFromLeft (12);
+    tremoloLabel.setBounds (effectsRow.removeFromLeft (62));
+    tremoloSlider.setBounds (effectsRow.removeFromLeft (130));
+    effectsRow.removeFromLeft (20);
+    learnTargetBox.setBounds (effectsRow.removeFromLeft (110));
+    effectsRow.removeFromLeft (6);
+    learnButton.setBounds (effectsRow.removeFromLeft (90));
 
     area.removeFromTop (10);
     messageLabel.setBounds (area.removeFromTop (22));

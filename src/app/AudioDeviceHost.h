@@ -7,6 +7,7 @@
 #include "EngineSnapshot.h"
 
 #include <core/audio/Limiter.h>
+#include <core/audio/Tremolo.h>
 #include <core/instrument/IInstrument.h>
 #include <core/instrument/Metronome.h>
 #include <core/midi/KeyboardState.h>
@@ -20,6 +21,21 @@
 
 namespace keyla::app
 {
+
+/** Qué puede mover un mando del teclado.
+
+    Aprender un mando era hasta ahora cosa sólo del volumen, y en cuanto
+    apareció el segundo destino quedó claro que el patrón se iba a repetir. Un
+    destino más es una línea aquí y un caso en el ruteo. */
+enum class ControlTarget
+{
+    volume = 0,
+    tremolo = 1,
+    reverb = 2
+};
+
+inline constexpr int numControlTargets = 3;
+
 
 /** Abre el dispositivo, drena el MIDI y hace sonar el instrumento.
 
@@ -97,6 +113,16 @@ public:
     void setReverbMix (float mix) noexcept;
     float reverbMix() const noexcept { return targetReverbMix.load (std::memory_order_relaxed); }
 
+    // ── Trémolo ─────────────────────────────────────────────────────────────
+
+    /** 0 = apagado. Va **antes** de la reverberación, como en un ampli. */
+    void setTremoloDepth (float depth) noexcept
+    {
+        targetTremoloDepth.store (juce::jlimit (0.0f, 1.0f, depth), std::memory_order_relaxed);
+    }
+
+    float tremoloDepth() const noexcept { return targetTremoloDepth.load (std::memory_order_relaxed); }
+
     // ── Volumen general ─────────────────────────────────────────────────────
     //
     // Va **después** del limitador a propósito. Si fuese antes, bajar el volumen
@@ -108,25 +134,35 @@ public:
     void setMasterVolume (float volume) noexcept;
     float masterVolume() const noexcept { return targetVolume.load (std::memory_order_relaxed); }
 
-    /** Número de CC que el teclado usa como volumen. 7 es el estándar, pero no
-        todos los controladores lo respetan; por eso el snapshot publica el
-        último CC recibido y esto se puede reasignar sin recompilar. */
-    void setVolumeControllerNumber (int cc) noexcept
+    // ── Mandos del teclado ──────────────────────────────────────────────────
+    //
+    // Los números por defecto son los estándar (CC7 volumen, CC1 rueda de
+    // modulación, CC91 envío a reverberación), pero eso es una convención y hay
+    // controladores que la ignoran: por eso cualquiera de los tres se puede
+    // reaprender, y por eso el snapshot publica el último CC recibido.
+
+    void setControllerNumber (ControlTarget target, int cc) noexcept
     {
-        volumeController.store (juce::jlimit (0, 127, cc), std::memory_order_relaxed);
+        controllerNumbers[static_cast<std::size_t> (target)]
+            .store (juce::jlimit (0, 127, cc), std::memory_order_relaxed);
     }
 
-    int volumeControllerNumber() const noexcept
+    int controllerNumber (ControlTarget target) const noexcept
     {
-        return volumeController.load (std::memory_order_relaxed);
+        return controllerNumbers[static_cast<std::size_t> (target)].load (std::memory_order_relaxed);
     }
 
-    /** Aprende el mando: el siguiente control continuo que llegue pasa a ser el
-        de volumen. Es la única forma honesta de que esto funcione con cualquier
-        teclado — CC7 es el estándar y hay controladores que lo ignoran. */
-    void learnVolumeController() noexcept { learningVolume.store (true, std::memory_order_relaxed); }
-    void cancelLearn() noexcept { learningVolume.store (false, std::memory_order_relaxed); }
-    bool isLearningVolumeController() const noexcept { return learningVolume.load (std::memory_order_relaxed); }
+    /** Aprende un mando: el siguiente control continuo que llegue se queda con
+        este destino. Es la única forma honesta de que esto funcione con
+        cualquier teclado. */
+    void learnController (ControlTarget target) noexcept
+    {
+        learning.store (static_cast<int> (target), std::memory_order_relaxed);
+    }
+
+    void cancelLearn() noexcept { learning.store (-1, std::memory_order_relaxed); }
+    bool isLearning() const noexcept { return learning.load (std::memory_order_relaxed) >= 0; }
+    int learningTargetIndex() const noexcept { return learning.load (std::memory_order_relaxed); }
 
     // ── Metrónomo (doc 05, fase 2) ──────────────────────────────────────────
 
@@ -209,6 +245,7 @@ private:
     core::Transport transport;
     core::KeyboardState keyboard;
     core::Limiter limiter;
+    core::Tremolo tremolo;
     core::Metronome metronome;
 
     std::atomic<bool> metronomeOn { false };
@@ -222,11 +259,16 @@ private:
     float currentReverbMix { 0.0f };
 
     std::atomic<float> targetVolume { 0.8f };
-    std::atomic<int> volumeController { 7 };        // CC7 = Volume, el estándar
     float currentVolume { 0.8f };
+
+    std::atomic<float> targetTremoloDepth { 0.0f };
+
+    // Volumen, trémolo y sala, en el orden de ControlTarget.
+    std::array<std::atomic<int>, numControlTargets> controllerNumbers { { { 7 }, { 1 }, { 91 } } };
+    std::atomic<int> learning { -1 };
+
     std::atomic<int> lastController { -1 };
     std::atomic<int> lastControllerValue { 0 };
-    std::atomic<bool> learningVolume { false };
 
     core::LockFreeQueue<IncomingMidi, 1024> midiFifo;
     core::LockFreeQueue<NoteEvent, 1024> noteEvents;
