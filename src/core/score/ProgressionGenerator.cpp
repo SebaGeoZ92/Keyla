@@ -182,6 +182,58 @@ namespace
     }
 }
 
+std::vector<int> voiceChordNear (int rootPitchClass, ChordQuality quality,
+                                 const std::vector<int>& previous, int centrePitch)
+{
+    const auto candidates = candidateVoicings (pitchClassOf (rootPitchClass), quality, centrePitch);
+
+    if (candidates.empty())
+        return {};
+
+    std::size_t best = 0;
+    int bestScore = std::numeric_limits<int>::max();
+
+    for (std::size_t i = 0; i < candidates.size(); ++i)
+    {
+        const auto& candidate = candidates[i];
+
+        // Sin mano anterior no hay nada que enlazar: se elige la colocación
+        // que quede mejor centrada, que es donde una mano descansa.
+        const int score = previous.empty()
+                        ? std::abs (candidate.front() - centrePitch)
+                              + std::abs (candidate.back() - centrePitch)
+                        : voicingDistance (previous, candidate);
+
+        if (score < bestScore)
+        {
+            bestScore = score;
+            best = i;
+        }
+    }
+
+    return candidates[best];
+}
+
+int bassNoteFor (int rootPitchClass, const std::vector<int>& rightHand)
+{
+    if (rightHand.empty())
+        return -1;
+
+    const int top = *std::min_element (rightHand.begin(), rightHand.end());
+
+    int bass = pitchClassOf (rootPitchClass) + 36;
+
+    // Ni tan lejos que se pierda el contacto entre las manos...
+    while (bass < top - 19)
+        bass += 12;
+
+    // ...ni tan cerca que se pisen: al menos una quinta por debajo.
+    while (bass > top - 7)
+        bass -= 12;
+
+    return (bass >= 21 && bass <= 108) ? bass : -1;
+}
+
 Exercise generateProgression (const ProgressionRequest& request)
 {
     Exercise exercise;

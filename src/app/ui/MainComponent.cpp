@@ -277,7 +277,7 @@ MainComponent::MainComponent (bool isUnattended)
     else
         openSelectedAudioDevice();
 
-    setSize (1100, 680);
+    setSize (1100, 692);
     startTimerHz (60);
 }
 
@@ -845,6 +845,13 @@ void MainComponent::applyListening()
 {
     listening.stop();
 
+    // La mano vuelve a empezar: enlazar voces con lo que quedó de la canción
+    // anterior es enlazar cosas que no tienen nada que ver.
+    coach.reset();
+    coachedChord.clear();
+    listeningView.setSuggestion ({});
+    keyboardView.setExpectedPitches ({});
+
     if (! listenToggle.getToggleState())
     {
         prefs.listenDeviceName = listenDeviceBox.getText();
@@ -867,6 +874,46 @@ void MainComponent::applyListening()
     }
 
     showMessage ("Escuchando. Pon una cancion y Keyla ira sacando los acordes."_u8, false);
+}
+
+void MainComponent::updateAccompaniment()
+{
+    const auto reading = listening.reading();
+
+    // Un ejercicio manda sobre el acompañamiento: las dos cosas encienden las
+    // mismas teclas, y si compitieran el alumno vería parpadear dos verdades a
+    // la vez sin saber a cuál hacer caso.
+    if (runner.isRunning() || ! reading.active || reading.rootPitchClass < 0)
+    {
+        if (! runner.isRunning() && ! coachedChord.isEmpty())
+        {
+            coachedChord.clear();
+            listeningView.setSuggestion ({});
+            keyboardView.setExpectedPitches ({});
+        }
+
+        return;
+    }
+
+    // Sólo se recalcula al cambiar de acorde. Recalcular en cada fotograma
+    // movería la mano sugerida sola, porque el enlace de voces depende de dónde
+    // estaba — y dónde estaba lo acabaríamos de fijar nosotros.
+    if (reading.chordSymbol == coachedChord)
+        return;
+
+    coachedChord = reading.chordSymbol;
+
+    const auto suggestion = coach.suggest (reading.rootPitchClass, reading.quality);
+
+    if (! suggestion.valid)
+    {
+        listeningView.setSuggestion ({});
+        keyboardView.setExpectedPitches ({});
+        return;
+    }
+
+    listeningView.setSuggestion (suggestion.description);
+    keyboardView.setExpectedPitches (suggestion.allNotes());
 }
 
 void MainComponent::saveSettings()
@@ -909,6 +956,7 @@ void MainComponent::timerCallback()
     keyboardView.updateFrom (snapshot);
     nowPlayingView.updateFrom (snapshot);
     listeningView.updateFrom (listening.reading());
+    updateAccompaniment();
     pumpNoteEvents();
     updateUnattendedState();
 
@@ -1069,7 +1117,7 @@ void MainComponent::resized()
     area.removeFromTop (6);
     nowPlayingView.setBounds (area.removeFromTop (40));
     area.removeFromTop (2);
-    listeningView.setBounds (area.removeFromTop (36));
+    listeningView.setBounds (area.removeFromTop (48));
     area.removeFromTop (6);
 
     statusLabel.setBounds (area.removeFromBottom (22));

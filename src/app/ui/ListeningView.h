@@ -37,10 +37,22 @@ public:
         repaint();
     }
 
+    /** Qué teclas tocar sobre lo que suena. La calcula la ventana, no el
+        motor de escucha: es una decisión musical, no una medición. */
+    void setSuggestion (const juce::String& text)
+    {
+        if (text == suggestion)
+            return;
+
+        suggestion = text;
+        repaint();
+    }
+
     void paint (juce::Graphics& g) override;
 
 private:
     ListeningReading current;
+    juce::String suggestion;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ListeningView)
 };

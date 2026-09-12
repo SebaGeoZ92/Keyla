@@ -24,6 +24,11 @@ struct ListeningReading
     /** Hay señal audible, no sólo paquetes de silencio. */
     bool hearingMusic { false };
 
+    /** El acorde en crudo, para que quien quiera acompañarlo no tenga que
+        volver a interpretar una cadena que acabamos de formatear. */
+    int rootPitchClass { -1 };
+    core::ChordQuality quality { core::ChordQuality::unknown };
+
     juce::String chordSymbol;
     juce::String chordDescription;
     juce::String keyName;

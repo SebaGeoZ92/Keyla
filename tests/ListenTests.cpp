@@ -9,6 +9,7 @@
 
 #include <core/instrument/Instruments.h>
 #include <core/listen/Chromagram.h>
+#include <core/listen/Accompaniment.h>
 #include <core/listen/HarmonyFromAudio.h>
 #include <core/music/Pitch.h>
 
@@ -307,4 +308,143 @@ TEST_CASE ("La ventana de analisis se declara", "[listen]")
 
     CHECK (analyser.windowSeconds() > 0.3);
     CHECK (analyser.windowSeconds() < 1.2);
+}
+
+TEST_CASE ("El acompanante toca el acorde que se le pide", "[listen][accompaniment]")
+{
+    // Colocar no es reharmonizar: salga donde salga en el teclado, las clases
+    // de altura tienen que ser exactamente las del acorde pedido.
+    AccompanimentCoach coach;
+
+    for (int root = 0; root < 12; ++root)
+    {
+        for (auto quality : { ChordQuality::major, ChordQuality::minor, ChordQuality::dominant7 })
+        {
+            const auto suggestion = coach.suggest (root, quality);
+
+            INFO ("acorde " << pitchClassName (root).toStdString()
+                  << ChordRecognizer::qualitySymbol (quality).toStdString());
+
+            REQUIRE (suggestion.valid);
+
+            std::vector<int> wanted;
+
+            for (auto interval : ChordRecognizer::intervalsFor (quality))
+                wanted.push_back ((root + interval) % 12);
+
+            std::sort (wanted.begin(), wanted.end());
+
+            std::vector<int> got;
+
+            for (auto pitch : suggestion.rightHand)
+                got.push_back (pitchClassOf (pitch));
+
+            std::sort (got.begin(), got.end());
+            got.erase (std::unique (got.begin(), got.end()), got.end());
+
+            CHECK (got == wanted);
+        }
+    }
+}
+
+TEST_CASE ("El acompanante mueve poco la mano entre acordes", "[listen][accompaniment]")
+{
+    // La propiedad que justifica que exista. Si la mano saltara como en estado
+    // fundamental, esto seria una lista de acordes y no un acompanamiento.
+    const std::vector<std::pair<int, ChordQuality>> song {
+        { 0, ChordQuality::major },     // Do
+        { 7, ChordQuality::major },     // Sol
+        { 9, ChordQuality::minor },     // Lam
+        { 5, ChordQuality::major },     // Fa
+        { 0, ChordQuality::major }
+    };
+
+    AccompanimentCoach::Options options;
+    options.withLeftHandBass = false;
+
+    AccompanimentCoach coach { options };
+
+    int linkedTravel = 0;
+    int rootTravel = 0;
+    std::vector<int> previous;
+
+    for (const auto& [root, quality] : song)
+    {
+        const auto suggestion = coach.suggest (root, quality);
+        REQUIRE (suggestion.valid);
+
+        if (! previous.empty())
+            for (std::size_t i = 0; i < previous.size() && i < suggestion.rightHand.size(); ++i)
+                linkedTravel += std::abs (suggestion.rightHand[i] - previous[i]);
+
+        previous = suggestion.rightHand;
+    }
+
+    // Lo mismo en estado fundamental, para comparar contra algo real y no
+    // contra un numero inventado.
+    std::vector<int> previousRoot;
+
+    for (const auto& [root, quality] : song)
+    {
+        std::vector<int> voicing;
+
+        for (auto interval : ChordRecognizer::intervalsFor (quality))
+            voicing.push_back (60 + root + interval);
+
+        if (! previousRoot.empty())
+            for (std::size_t i = 0; i < previousRoot.size() && i < voicing.size(); ++i)
+                rootTravel += std::abs (voicing[i] - previousRoot[i]);
+
+        previousRoot = voicing;
+    }
+
+    std::cout << "  [acompanar] recorrido de la mano: enlazado " << linkedTravel
+              << " semitonos, fundamental " << rootTravel << '\n';
+
+    CHECK (linkedTravel * 2 < rootTravel);
+}
+
+TEST_CASE ("El bajo no se amontona con la derecha", "[listen][accompaniment]")
+{
+    // Dos manos en el mismo sitio del grave es exactamente como se consigue que
+    // un acorde suene a barro. Es el mismo error que ya costo el bug de los
+    // graves del piano, y aqui se evita por construccion.
+    AccompanimentCoach coach;
+
+    for (int root = 0; root < 12; ++root)
+    {
+        const auto suggestion = coach.suggest (root, ChordQuality::major);
+        REQUIRE (suggestion.valid);
+        REQUIRE (suggestion.bassNote >= 0);
+
+        const int lowestRight = *std::min_element (suggestion.rightHand.begin(),
+                                                   suggestion.rightHand.end());
+
+        INFO ("bajo " << suggestion.bassNote << " derecha desde " << lowestRight);
+
+        CHECK (suggestion.bassNote <= lowestRight - 7);      // al menos una quinta
+        CHECK (pitchClassOf (suggestion.bassNote) == root);  // y es la fundamental
+        CHECK (suggestion.bassNote >= 21);
+    }
+}
+
+TEST_CASE ("Olvidar la mano corta el enlace entre canciones", "[listen][accompaniment]")
+{
+    AccompanimentCoach coach;
+
+    const auto first = coach.suggest (11, ChordQuality::major);   // Si mayor, arriba
+    REQUIRE (first.valid);
+
+    coach.reset();
+
+    const auto afterReset = coach.suggest (0, ChordQuality::major);
+    REQUIRE (afterReset.valid);
+
+    // Sin memoria, un Do mayor se coloca centrado, no pegado a donde quedo el
+    // Si de la cancion anterior.
+    const int centre = 60;
+    const int distance = std::abs (afterReset.rightHand.front() - centre);
+
+    INFO ("primera nota tras olvidar: " << afterReset.rightHand.front());
+    CHECK (distance <= 12);
 }

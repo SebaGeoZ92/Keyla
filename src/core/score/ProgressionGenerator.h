@@ -75,4 +75,27 @@ juce::String voicingName (Voicing voicing);
 
 Exercise generateProgression (const ProgressionRequest& request);
 
+// ── Colocación de acordes ───────────────────────────────────────────────────
+//
+// Estaban escondidas dentro del .cpp porque sólo las usaban las progresiones.
+// En cuanto Keyla empezó a sacar acordes de una canción hizo falta lo mismo
+// para acompañarla, y duplicar el enlace de voces habría sido duplicar también
+// sus decisiones sutiles.
+
+/** Coloca un acorde en el teclado eligiendo la inversión **más cercana** a
+    donde la mano ya estaba. Con `previous` vacío elige la más centrada.
+
+    Esto es lo que separa un acompañamiento de una lista de acordes: los dedos
+    apenas se mueven entre acorde y acorde, en vez de saltar a fundamental cada
+    vez. */
+std::vector<int> voiceChordNear (int rootPitchClass, ChordQuality quality,
+                                 const std::vector<int>& previous,
+                                 int centrePitch = 60);
+
+/** La fundamental para la izquierda: al menos una quinta por debajo de la
+    derecha, para que las dos manos no se amontonen en el mismo sitio — que en
+    el grave es exactamente como se consigue que un acorde suene a barro.
+    Devuelve -1 si no cabe en el teclado. */
+int bassNoteFor (int rootPitchClass, const std::vector<int>& rightHand);
+
 } // namespace keyla::core

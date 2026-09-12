@@ -48,7 +48,9 @@ add_library(keyla_core STATIC
         listen/Chromagram.h
         listen/Chromagram.cpp
         listen/HarmonyFromAudio.h
-        listen/HarmonyFromAudio.cpp)
+        listen/HarmonyFromAudio.cpp
+        listen/Accompaniment.h
+        listen/Accompaniment.cpp)
 
 target_include_directories(keyla_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 

@@ -128,6 +128,8 @@ void ListeningEngine::handleAudio (const float* samples, int numSamples)
     // entrega paquetes de silencio, y eso no es música.
     published.hearingMusic = recentEnergy > 1.0e-4;
 
+    published.rootPitchClass = chord.recognised ? chord.rootPitchClass : -1;
+    published.quality = chord.recognised ? chord.quality : core::ChordQuality::unknown;
     published.chordSymbol = chord.recognised ? chord.symbol : juce::String();
     published.chordDescription = chord.recognised ? chord.description : juce::String();
     published.keyName = key.recognised ? key.name : juce::String();

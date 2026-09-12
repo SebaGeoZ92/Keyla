@@ -10,6 +10,7 @@
 #include "PianoKeyboardView.h"
 
 #include <core/evaluation/Metrics.h>
+#include <core/listen/Accompaniment.h>
 #include <core/evaluation/OfflineAligner.h>
 #include <core/exercise/ExerciseRunner.h>
 #include <core/recording/SessionRecorder.h>
@@ -66,6 +67,7 @@ private:
     void importMidiExercise();
     void rebuildListenDeviceList();
     void applyListening();
+    void updateAccompaniment();
     void updateUnattendedState();
     void setOpenWithWindows (bool shouldOpen);
 
@@ -89,6 +91,11 @@ private:
         ciclo de vida. */
     ListeningEngine listening;
     ListeningView listeningView;
+
+    /** Decide dónde poner los dedos sobre lo que suena. Guarda la posición de
+        la mano entre acordes, que es lo que hace el enlace de voces. */
+    core::AccompanimentCoach coach;
+    juce::String coachedChord;
     ExerciseView exerciseView;
 
     // El profesor vive en el dominio de sesión: se alimenta de la FIFO de

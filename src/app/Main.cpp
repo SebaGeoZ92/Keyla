@@ -1,4 +1,6 @@
 #include "ListeningEngine.h"
+
+#include <core/listen/Accompaniment.h>
 #include "StartupShortcut.h"
 #include "ui/MainComponent.h"
 
@@ -118,6 +120,7 @@ private:
             log.add ("escuchando: " + engine.reading().deviceName);
 
             juce::String lastChord;
+            keyla::core::AccompanimentCoach coach;
 
             for (int tick = 0; tick < juce::jmax (1, seconds) * 4; ++tick)
             {
@@ -128,9 +131,11 @@ private:
                 if (reading.chordSymbol.isNotEmpty() && reading.chordSymbol != lastChord)
                 {
                     lastChord = reading.chordSymbol;
+                    const auto suggestion = coach.suggest (reading.rootPitchClass, reading.quality);
+
                     log.add ("acorde: " + lastChord
                              + "   confianza " + juce::String (reading.confidence, 3)
-                             + "   margen " + juce::String (reading.margin, 3));
+                             + "   -> toca: " + suggestion.description);
                 }
             }
 

@@ -44,7 +44,7 @@ void ListeningView::paint (juce::Graphics& g)
         return;
     }
 
-    auto headlineArea = area.removeFromLeft (juce::jmin (area.getWidth(), 200));
+    auto headlineArea = area.removeFromLeft (juce::jmin (area.getWidth(), 170));
 
     if (current.chordSymbol.isNotEmpty())
     {
@@ -59,6 +59,11 @@ void ListeningView::paint (juce::Graphics& g)
         g.drawText ("¿?"_u8, headlineArea, juce::Justification::centredLeft, false);
     }
 
+    // Dos renglones: arriba el contexto, abajo lo accionable. Lo que hay que
+    // tocar va debajo y en claro porque es lo único de aquí que se usa con las
+    // manos; el resto es información.
+    auto contextArea = area.removeFromTop (area.getHeight() / 2);
+
     juce::String detail;
 
     if (current.keyName.isNotEmpty())
@@ -68,8 +73,15 @@ void ListeningView::paint (juce::Graphics& g)
         detail << current.progression;
 
     g.setColour (label);
-    g.setFont (juce::FontOptions (14.0f));
-    g.drawText (detail, area, juce::Justification::centredLeft, false);
+    g.setFont (juce::FontOptions (13.0f));
+    g.drawText (detail, contextArea, juce::Justification::centredLeft, false);
+
+    if (suggestion.isNotEmpty())
+    {
+        g.setColour (juce::Colour { 0xffe8eaed });
+        g.setFont (juce::FontOptions (14.0f));
+        g.drawText ("toca:  "_u8 + suggestion, area, juce::Justification::centredLeft, false);
+    }
 }
 
 } // namespace keyla::app
