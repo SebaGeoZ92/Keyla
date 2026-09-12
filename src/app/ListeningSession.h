@@ -65,4 +65,16 @@ juce::String tuneListeningSession (const juce::File& folder,
                                    double fromSeconds, double toSeconds,
                                    juce::String& error);
 
+/** Lo mismo sobre **varias** canciones a la vez, más una prueba de acordes
+    limpios, y escribe el resultado en `outputFile`.
+
+    Con una sola canción, el mejor ajuste es el que mejor se aprende esa
+    canción — y eso ya pasó: el ajuste que más puntuaba en la cumbia borraba las
+    séptimas, que en esa cumbia no había. Con varias, un ajuste sólo gana si
+    funciona en todas. Y los acordes limpios hacen de guardián: un ajuste que
+    los rompa queda descalificado por mucho que suba en las canciones. */
+juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
+                                 const juce::File& outputFile,
+                                 juce::String& error);
+
 } // namespace keyla::app

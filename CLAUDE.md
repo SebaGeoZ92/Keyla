@@ -251,6 +251,36 @@ Lo que se aprendió, y que conviene no desaprender:
 - Agudizar menos (1,5 en vez de 2) va mejor en mezclas: con 2 se hundía la
   tercera, que en una mezcla suele sonar más floja que la fundamental.
 
+**Segunda canción: el ajuste generaliza.** *Algo de mí*, bolero, 4 min 53 s: lo
+contrario de la cumbia —séptimas por todas partes, más cambios, voz delante—.
+El ajuste sacado **sólo** de la cumbia, sin tocarlo:
+
+| | Acorde | Tipo | Tonalidad |
+|---|---|---|---|
+| Cumbia | 54 % | 53 % | Re mayor ✓ |
+| Bolero | 77 % | 58 % | Si♭ mayor ✓ |
+
+`keyla_session tune-all` compara 270 ajustes sobre las dos canciones a la vez y
+descalifica los que bajen del 90 % en los 48 acordes limpios. El actual queda
+a 1-2 puntos del mejor que no los rompe (67 % / 57 %), y **no se cambió**: esa
+diferencia es menor que el ruido de las propias grabaciones. Sólo los Dm que
+el autor tocó como D en el bolero son 8,5 s de 290, un 3 %. Cambiar el ajuste
+por menos que eso es perseguir los errores de quien toca.
+
+Dos cosas que enseñó el bolero:
+
+- **El informe también encuentra los errores del que toca.** "Tocaste D y
+  Keyla oyó Dm" durante 8,5 s eran Dm tocados como D: ahí Keyla tenía razón.
+  Cuenta como fallo suyo en el porcentaje y no lo es.
+- **Lo que más resta en el bolero son las séptimas** (A#maj7 oído como A#,
+  14,6 s). Ningún valor de las perillas lo arregla sin romper los acordes
+  limpios o la cumbia. Puede que en la grabación la séptima sea débil y la
+  añada quien toca; no hay forma de saberlo desde aquí.
+
+Grabar sesiones cortas no sirve para ajustar: `tune-all` deja fuera las de
+menos de dos minutos, que suelen ser arranques en falso y pesarían en la media
+lo mismo que una canción entera.
+
 Lo que sigue sin resolver: las confusiones entre acordes que comparten dos
 notas (D↔Bm, A↔Bm, Em↔Bm). Ahí ya no ayudan las perillas; hace falta un bajo
 mejor detectado o un suavizado temporal que conozca las transiciones probables

@@ -1,5 +1,6 @@
 #include "ListeningSession.h"
 
+#include <core/instrument/Instruments.h>
 #include <core/listen/Accompaniment.h>
 #include <core/listen/ChordTimeline.h>
 #include <core/listen/Chromagram.h>
@@ -436,6 +437,253 @@ juce::String tuneListeningSession (const juce::File& folder,
 
     const auto text = report.joinIntoString ("\n") + "\n";
     folder.getChildFile ("ajuste.txt").replaceWithText (text);
+    return text;
+}
+
+namespace
+{
+    /** Un acorde limpio tocado por el piano de Keyla, ya escuchado. */
+    struct CleanChord
+    {
+        int root;
+        core::ChordQuality quality;
+        core::Chroma chroma;
+    };
+
+    /** Los mismos 48 acordes que usa el test de acierto: doce fundamentales en
+        mayor, menor, séptima y menor séptima. Se renderizan y se escuchan una
+        vez; cada ajuste sólo repite la decisión, que es lo barato. */
+    std::vector<CleanChord> renderCleanChords()
+    {
+        constexpr double rate = 48000.0;
+        constexpr int block = 512;
+
+        std::vector<CleanChord> chords;
+
+        for (auto quality : { core::ChordQuality::major, core::ChordQuality::minor,
+                              core::ChordQuality::dominant7, core::ChordQuality::minor7 })
+        {
+            for (int root = 0; root < 12; ++root)
+            {
+                auto piano = core::createInstrument (core::InstrumentId::piano);
+                piano->prepare (rate, block);
+
+                std::vector<core::StampedMidiEvent> events;
+
+                for (auto interval : core::ChordRecognizer::intervalsFor (quality))
+                {
+                    core::StampedMidiEvent event;
+                    event.message.bytes[0] = 0x90;
+                    event.message.bytes[1] = static_cast<std::uint8_t> (48 + root + interval);
+                    event.message.bytes[2] = 100;
+                    event.message.size = 3;
+                    event.renderOffset = 0;
+                    events.push_back (event);
+                }
+
+                juce::AudioBuffer<float> buffer (2, block);
+                std::vector<float> mono;
+
+                for (int b = 0; b < static_cast<int> (rate / block); ++b)
+                {
+                    buffer.clear();
+                    piano->process (buffer, b == 0 ? core::MidiEventSpan { events.data(), events.size() }
+                                                   : core::MidiEventSpan { nullptr, 0 });
+
+                    const auto* data = buffer.getReadPointer (0);
+                    mono.insert (mono.end(), data, data + block);
+                }
+
+                const auto frames = core::computeChromaFrames (mono, rate);
+
+                if (! frames.empty())
+                    chords.push_back ({ root, quality, frames.back().chroma });
+            }
+        }
+
+        return chords;
+    }
+
+    double cleanTypeAccuracy (const std::vector<CleanChord>& chords,
+                              const core::HarmonyListener::Options& options)
+    {
+        if (chords.empty())
+            return 0.0;
+
+        int hits = 0;
+
+        for (const auto& chord : chords)
+        {
+            const auto estimate = core::HarmonyListener::estimate (chord.chroma, chord.root, options);
+
+            if (estimate.rootPitchClass == chord.root && estimate.quality == chord.quality)
+                ++hits;
+        }
+
+        return static_cast<double> (hits) / static_cast<double> (chords.size());
+    }
+}
+
+juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
+                                 const juce::File& outputFile,
+                                 juce::String& error)
+{
+    struct Song
+    {
+        juce::String name;
+        double duration { 0.0 };
+        int lowestPitch { 0 };
+        std::vector<core::ChromaFrame> frames;
+        std::vector<core::TimedChord> played;
+    };
+
+    std::vector<Song> songs;
+
+    for (const auto& folder : folders)
+    {
+        ListeningSessionData data;
+
+        if (! readListeningSession (folder, data, error))
+            return {};
+
+        Song song;
+        song.name = folder.getFileName();
+        song.duration = data.durationSeconds();
+
+        std::vector<float> mono (data.audio.size());
+
+        for (std::size_t i = 0; i < mono.size(); ++i)
+            mono[i] = data.audio[i] / 32768.0f;
+
+        song.frames = core::computeChromaFrames (mono, data.sampleRate, {}, &song.lowestPitch);
+        song.played = core::chordsFromNotes (data.notes);
+        songs.push_back (std::move (song));
+    }
+
+    if (songs.empty())
+    {
+        error = "No hay sesiones que comparar."_u8;
+        return {};
+    }
+
+    const auto clean = renderCleanChords();
+
+    struct Trial
+    {
+        core::HarmonyListener::Options options;
+        std::vector<core::ListeningEvaluation> perSong;
+        double meanRoot { 0.0 };
+        double meanType { 0.0 };
+        double worstType { 1.0 };
+        double cleanType { 0.0 };
+
+        double score() const { return 0.5 * (meanRoot + meanType); }
+    };
+
+    const auto evaluate = [&songs, &clean] (const core::HarmonyListener::Options& options)
+    {
+        Trial trial;
+        trial.options = options;
+
+        for (const auto& song : songs)
+        {
+            const auto heard = core::chordsFromFrames (song.frames, song.lowestPitch, options);
+            const auto result = core::evaluateListening (heard, song.played, song.duration, 1.0, 0.05);
+
+            trial.perSong.push_back (result);
+            trial.meanRoot += result.rootAgreement / songs.size();
+            trial.meanType += result.fullAgreement / songs.size();
+            trial.worstType = std::min (trial.worstType, result.fullAgreement);
+        }
+
+        trial.cleanType = cleanTypeAccuracy (clean, options);
+        return trial;
+    };
+
+    std::vector<Trial> trials;
+
+    for (double sharpening : { 1.0, 1.5, 2.0 })
+     for (double rare : { 0.10, 0.30, 0.50 })
+      for (double seventh : { 0.0, 0.02, 0.05, 0.08, 0.10 })
+       for (double bass : { 0.03, 0.08, 0.15 })
+        for (int agree : { 3, 4 })
+        {
+            core::HarmonyListener::Options options;
+            options.sharpening = sharpening;
+            options.complexQualityPenalty = rare;
+            options.seventhQualityPenalty = seventh;
+            options.bassIsRootBonus = bass;
+            options.framesToAgree = agree;
+            trials.push_back (evaluate (options));
+        }
+
+    std::sort (trials.begin(), trials.end(),
+               [] (const Trial& a, const Trial& b) { return a.score() > b.score(); });
+
+    const auto describe = [] (const Trial& t)
+    {
+        juce::String line;
+        line << "agudizar " << juce::String (t.options.sharpening, 1)
+             << "  raros " << juce::String (t.options.complexQualityPenalty, 2)
+             << "  sept " << juce::String (t.options.seventhQualityPenalty, 2)
+             << "  bajo " << juce::String (t.options.bassIsRootBonus, 2)
+             << "  fotogr " << t.options.framesToAgree
+             << "   ->  media " << percent (t.meanRoot) << " / " << percent (t.meanType)
+             << "   limpios " << percent (t.cleanType) << "   [";
+
+        for (std::size_t i = 0; i < t.perSong.size(); ++i)
+            line << (i > 0 ? "  " : "") << percent (t.perSong[i].rootAgreement)
+                 << "/" << percent (t.perSong[i].fullAgreement);
+
+        return line + "]";
+    };
+
+    juce::StringArray report;
+    report.add ("Keyla - ajuste sobre varias canciones");
+    report.add ("Ajustes probados: " + juce::String (static_cast<int> (trials.size())));
+    report.add ("Cada fila: acorde / tipo, de media y por cancion. 'limpios' = acierto de tipo");
+    report.add ("en los 48 acordes del piano de Keyla. Por debajo del 90 % el ajuste queda descalificado.");
+    report.add ({});
+    report.add ("CANCIONES");
+
+    for (std::size_t i = 0; i < songs.size(); ++i)
+        report.add ("  " + juce::String (static_cast<int> (i + 1)) + ". " + songs[i].name
+                    + "   " + clock (songs[i].duration));
+
+    report.add ({});
+    report.add ("AJUSTE ACTUAL");
+    report.add ("  " + describe (evaluate (core::HarmonyListener::Options {})));
+
+    report.add ({});
+    report.add ("LOS 20 MEJORES QUE NO ROMPEN LOS ACORDES LIMPIOS");
+
+    int shown = 0;
+
+    for (const auto& trial : trials)
+    {
+        if (trial.cleanType < 0.90)
+            continue;
+
+        report.add ("  " + describe (trial));
+
+        if (++shown == 20)
+            break;
+    }
+
+    report.add ({});
+    report.add ("LOS 5 MEJORES SIN MIRAR LOS LIMPIOS (lo que costaria no protegerlos)");
+
+    for (std::size_t i = 0; i < std::min<std::size_t> (5, trials.size()); ++i)
+        report.add ("  " + describe (trials[i]));
+
+    report.add ({});
+    report.add ("TODOS");
+
+    for (const auto& trial : trials)
+        report.add ("  " + describe (trial));
+
+    const auto text = report.joinIntoString ("\n") + "\n";
+    outputFile.replaceWithText (text);
     return text;
 }
 
