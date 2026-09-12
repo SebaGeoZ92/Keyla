@@ -11,6 +11,7 @@
 #include <core/listen/Chromagram.h>
 #include <core/listen/Accompaniment.h>
 #include <core/listen/HarmonyFromAudio.h>
+#include <core/listen/ListeningEvaluation.h>
 #include <core/music/Pitch.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -447,4 +448,131 @@ TEST_CASE ("Olvidar la mano corta el enlace entre canciones", "[listen][accompan
 
     INFO ("primera nota tras olvidar: " << afterReset.rightHand.front());
     CHECK (distance <= 12);
+}
+
+namespace
+{
+    /** Do-Sol-Lam-Fa, un acorde cada dos segundos, a partir de `offset`. */
+    std::vector<TimedChord> popLoop (double offset, int repeats = 3)
+    {
+        const std::vector<std::pair<int, ChordQuality>> loop {
+            { 0, ChordQuality::major }, { 7, ChordQuality::major },
+            { 9, ChordQuality::minor }, { 5, ChordQuality::major }
+        };
+
+        std::vector<TimedChord> timeline;
+        double t = offset;
+
+        for (int r = 0; r < repeats; ++r)
+            for (const auto& [root, quality] : loop)
+            {
+                timeline.push_back ({ t, root, quality });
+                t += 2.0;
+            }
+
+        return timeline;
+    }
+}
+
+TEST_CASE ("Comparar lo oido con lo tocado: acuerdo perfecto", "[listen][evaluation]")
+{
+    const auto song = popLoop (0.0);
+    const auto result = evaluateListening (song, song, 24.0);
+
+    REQUIRE (result.valid);
+    CHECK (result.rootAgreement > 0.99);
+    CHECK (result.fullAgreement > 0.99);
+    CHECK (std::abs (result.lagSeconds) < 0.01);
+    CHECK (result.confusions.empty());
+}
+
+TEST_CASE ("Encuentra el retraso de las manos", "[listen][evaluation]")
+{
+    // Tocas lo mismo pero medio segundo tarde. Si no se corrigiera el desfase,
+    // cada cambio de acorde contaria como error durante medio segundo aunque
+    // los dos hubierais acertado, y el informe culparia al reconocedor.
+    const auto heard = popLoop (0.0);
+    const auto played = popLoop (0.5);
+
+    const auto result = evaluateListening (heard, played, 25.0);
+
+    REQUIRE (result.valid);
+    CHECK (std::abs (result.lagSeconds - 0.5) < 0.06);
+    CHECK (result.rootAgreement > 0.97);
+}
+
+TEST_CASE ("Cuenta las confusiones por tiempo", "[listen][evaluation]")
+{
+    // Keyla oye Do donde tocaste Lam — la confusion mas natural del mundo,
+    // porque comparten dos de sus tres notas.
+    auto heard = popLoop (0.0);
+    const auto played = popLoop (0.0);
+
+    for (auto& chord : heard)
+        if (chord.rootPitchClass == 9)
+        {
+            chord.rootPitchClass = 0;
+            chord.quality = ChordQuality::major;
+        }
+
+    const auto result = evaluateListening (heard, played, 24.0, 0.0);
+
+    REQUIRE (result.valid);
+
+    // Un acorde de cada cuatro mal: 75 %.
+    CHECK (std::abs (result.rootAgreement - 0.75) < 0.03);
+
+    REQUIRE (! result.confusions.empty());
+
+    const auto& worst = result.confusions.front();
+    CHECK (worst.playedRoot == 9);
+    CHECK (worst.playedQuality == ChordQuality::minor);
+    CHECK (worst.heardRoot == 0);
+    CHECK (worst.heardQuality == ChordQuality::major);
+    CHECK (std::abs (worst.seconds - 6.0) < 0.2);
+}
+
+TEST_CASE ("Los acordes tocados salen de las teclas", "[listen][evaluation]")
+{
+    std::vector<TimedNote> notes;
+
+    const auto press = [&notes] (double t, std::vector<int> pitches, double length)
+    {
+        for (auto p : pitches)
+            notes.push_back ({ t, p, true });
+
+        for (auto p : pitches)
+            notes.push_back ({ t + length, p, false });
+    };
+
+    press (0.0, { 60, 64, 67 }, 1.0);      // Do
+    press (1.0, { 55, 59, 62 }, 1.0);      // Sol
+
+    const auto chords = chordsFromNotes (notes);
+
+    REQUIRE (chords.size() == 2);
+    CHECK (chords[0].rootPitchClass == 0);
+    CHECK (chords[1].rootPitchClass == 7);
+    CHECK (std::abs (chords[1].seconds - 1.0) < 0.01);
+}
+
+TEST_CASE ("El legato no fabrica acordes que no tocaste", "[listen][evaluation]")
+{
+    // Pasas de Do a Lam sin levantar del todo la mano: durante unos
+    // milisegundos tienes Do-Mi-Sol-La bajo los dedos, que es un Do6 —o un
+    // Lam7, segun el bajo—. Ese acorde no lo tocaste y no debe aparecer.
+    std::vector<TimedNote> notes {
+        { 0.00, 60, true }, { 0.00, 64, true }, { 0.00, 67, true },
+        { 1.00, 69, true },                                          // entra el La...
+        { 1.02, 67, false },                                         // ...y sale el Sol
+        { 2.00, 60, false }, { 2.00, 64, false }, { 2.00, 69, false }
+    };
+
+    const auto chords = chordsFromNotes (notes);
+
+    REQUIRE (chords.size() == 2);
+    CHECK (chords[0].rootPitchClass == 0);
+    CHECK (chords[0].quality == ChordQuality::major);
+    CHECK (chords[1].rootPitchClass == 9);
+    CHECK (chords[1].quality == ChordQuality::minor);
 }

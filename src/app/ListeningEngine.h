@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ListeningSession.h"
 #include "LoopbackCapture.h"
 
 #include <core/listen/Chromagram.h>
@@ -74,8 +75,32 @@ public:
         arrastrar la de la canción anterior la envenena. */
     void forget();
 
+    // ── Grabar una sesión ───────────────────────────────────────────────────
+    //
+    // Graba la canción y tus teclas en la misma escala de tiempo, para comparar
+    // después lo que oyó Keyla con lo que tocaste. Todo se guarda en memoria y
+    // se escribe al parar: nada de disco en el hilo de captura.
+
+    void startRecording();
+
+    /** Deja de grabar y escribe la carpeta. Vacía y con `error` si no hubo audio. */
+    juce::File stopRecording (juce::String& error);
+
+    bool isRecording() const;
+
+    /** Se llegó al límite de duración y se dejó de guardar audio. */
+    bool recordingIsFull() const;
+
+    /** Hilo MIDI. */
+    void recordNote (int pitch, bool isOn, double wallSeconds);
+
+    /** Quince minutos. Una canción larga cabe entera, y a 48 kHz son 86 MB en
+        memoria: más que eso sería guardar sin querer media tarde. */
+    static constexpr double maxRecordingSeconds = 15.0 * 60.0;
+
 private:
     void handleAudio (const float* samples, int numSamples);
+    void appendToRecording (const float* samples, int numSamples, double rate);
 
     LoopbackCapture capture;
 
@@ -87,6 +112,12 @@ private:
 
     mutable juce::CriticalSection lock;
     ListeningReading published;
+
+    mutable juce::CriticalSection recordLock;
+    bool recording { false };
+    bool recordingFull { false };
+    double recordStartSeconds { 0.0 };
+    ListeningSessionData session;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ListeningEngine)
 };

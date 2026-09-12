@@ -163,6 +163,7 @@ MainComponent::MainComponent (bool isUnattended)
     addAndMakeVisible (startupToggle);
     addAndMakeVisible (listenToggle);
     addAndMakeVisible (listenDeviceBox);
+    addAndMakeVisible (recordListenButton);
     addAndMakeVisible (listeningView);
 
     exclusiveToggle.setToggleState (prefs.exclusive, juce::dontSendNotification);
@@ -199,6 +200,15 @@ MainComponent::MainComponent (bool isUnattended)
 
     rebuildListenDeviceList();
     listenToggle.onClick = [this] { applyListening(); };
+    recordListenButton.onClick = [this] { toggleSessionRecording(); };
+
+    // Tus teclas, con su instante, para las sesiones grabadas. Se engancha
+    // antes de abrir ningún puerto MIDI: cambiarlo con el driver ya llamando
+    // sería una carrera.
+    midiHost.onNoteObserved = [this] (int pitch, bool isOn, double seconds)
+    {
+        listening.recordNote (pitch, isOn, seconds);
+    };
     listenDeviceBox.onChange = [this]
     {
         if (listenToggle.getToggleState())
@@ -843,6 +853,9 @@ void MainComponent::rebuildListenDeviceList()
 
 void MainComponent::applyListening()
 {
+    if (listening.isRecording())
+        toggleSessionRecording();
+
     listening.stop();
 
     // La mano vuelve a empezar: enlazar voces con lo que quedó de la canción
@@ -914,6 +927,52 @@ void MainComponent::updateAccompaniment()
 
     listeningView.setSuggestion (suggestion.description);
     keyboardView.setExpectedPitches (suggestion.allNotes());
+}
+
+void MainComponent::toggleSessionRecording()
+{
+    if (! listening.isRecording())
+    {
+        if (! listening.isRunning())
+        {
+            showMessage ("Enciende primero la escucha: se graba lo que Keyla oye."_u8, true);
+            return;
+        }
+
+        listening.startRecording();
+        recordListenButton.setButtonText ("Parar y analizar");
+        showMessage ("Grabando. Toca siguiendo la cancion; al parar te digo en que coincidimos."_u8, false);
+        return;
+    }
+
+    recordListenButton.setButtonText ("Grabar");
+
+    juce::String error;
+    const auto folder = listening.stopRecording (error);
+
+    if (folder == juce::File())
+    {
+        showMessage (error.isNotEmpty() ? error : "No habia nada grabado."_u8, true);
+        return;
+    }
+
+    showMessage ("Analizando la sesion..."_u8, false);
+
+    // Unos segundos de cálculo por cada minuto de canción: fuera del hilo de
+    // mensajes, o la ventana se congelaría justo cuando esperas el resultado.
+    juce::Thread::launch ([folder]
+    {
+        juce::String analysisError;
+        analyseListeningSession (folder, analysisError);
+
+        juce::MessageManager::callAsync ([folder, analysisError]
+        {
+            const auto report = folder.getChildFile ("informe.txt");
+
+            if (report.existsAsFile())
+                report.startAsProcess();
+        });
+    });
 }
 
 void MainComponent::saveSettings()
@@ -1062,7 +1121,9 @@ void MainComponent::resized()
     secondRow.removeFromLeft (16);
     listenToggle.setBounds (secondRow.removeFromLeft (140));
     secondRow.removeFromLeft (4);
-    listenDeviceBox.setBounds (secondRow.removeFromLeft (230));
+    listenDeviceBox.setBounds (secondRow.removeFromLeft (180));
+    secondRow.removeFromLeft (4);
+    recordListenButton.setBounds (secondRow.removeFromLeft (110));
 
     area.removeFromTop (8);
 

@@ -68,6 +68,7 @@ private:
     void rebuildListenDeviceList();
     void applyListening();
     void updateAccompaniment();
+    void toggleSessionRecording();
     void updateUnattendedState();
     void setOpenWithWindows (bool shouldOpen);
 
@@ -139,6 +140,7 @@ private:
     juce::TextButton panicButton { "Silencio" };
     juce::ToggleButton startupToggle { "Abrir con Windows" };
     juce::ToggleButton listenToggle { "Escuchar el PC" };
+    juce::TextButton recordListenButton { "Grabar" };
     juce::ComboBox listenDeviceBox;
     juce::TextButton learnButton { "Aprender" };
     juce::ComboBox kindBox, tonicBox, variantBox, optionBox, handBox, modeBox;

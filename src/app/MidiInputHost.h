@@ -39,6 +39,14 @@ public:
         entere sin sondear ella. Se llama en el message thread. */
     std::function<void()> onConnectionChanged;
 
+    /** Cada nota que llega, con su instante de reloj de pared en segundos.
+
+        **Se llama desde el hilo del driver MIDI.** Existe para grabar sesiones
+        de escucha, que necesitan tus teclas en la misma escala de tiempo que la
+        canción capturada. Quien lo use no puede tardar: lo que haga aquí retrasa
+        la nota siguiente. Se fija una vez, antes de abrir ningún puerto. */
+    std::function<void (int pitch, bool isOn, double seconds)> onNoteObserved;
+
 private:
     void timerCallback() override;
     void handleIncomingMidiMessage (juce::MidiInput* source,

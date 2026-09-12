@@ -1,4 +1,5 @@
 #include "ListeningEngine.h"
+#include "ListeningSession.h"
 
 #include <core/listen/Accompaniment.h>
 #include "StartupShortcut.h"
@@ -40,6 +41,22 @@ public:
         // Comprobar la escucha sin ventana y sin humano. Es la única forma de
         // saber si la captura de WASAPI recibe algo de verdad: lo demás que se
         // puede decir de ella es que compila.
+        // Analizar una sesión grabada sin abrir la ventana. Es lo que permite
+        // probar otros ajustes sobre la misma canción sin volver a tocarla.
+        if (commandLine.contains ("--analyse-session"))
+        {
+            const auto path = commandLine.fromFirstOccurrenceOf ("--analyse-session", false, false)
+                                         .trim().unquoted();
+            juce::String error;
+            analyseListeningSession (juce::File (path), error);
+
+            if (error.isNotEmpty())
+                juce::File (path).getChildFile ("informe.txt").replaceWithText ("ERROR: " + error);
+
+            quit();
+            return;
+        }
+
         if (commandLine.contains ("--listen-test"))
         {
             runListenTest (commandLine);

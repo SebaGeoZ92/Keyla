@@ -22,6 +22,7 @@ target_sources(keyla PRIVATE
         StartupShortcut.cpp
         LoopbackCapture.cpp
         ListeningEngine.cpp
+        ListeningSession.cpp
         MidiInputHost.cpp
         ui/MainComponent.cpp
         ui/ExerciseView.cpp

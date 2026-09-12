@@ -119,7 +119,12 @@ void MidiInputHost::handleIncomingMidiMessage (juce::MidiInput*, const juce::Mid
 
     // El sello temporal se toma aquí y no del driver: el timestamp de MMSystem
     // tiene granularidad de 1 ms, y aquí se quiere sub-milisegundo (doc 02 §3).
-    host.pushMidiMessage (raw, juce::Time::getMillisecondCounterHiRes() * 0.001);
+    const double seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+
+    host.pushMidiMessage (raw, seconds);
+
+    if (onNoteObserved != nullptr && (message.isNoteOn() || message.isNoteOff()))
+        onNoteObserved (message.getNoteNumber(), message.isNoteOn(), seconds);
 }
 
 } // namespace keyla::app

@@ -194,6 +194,29 @@ encendiendo las teclas de la pantalla.
   colocaciones salen con enlace de voces de libro (C4-E4-G4 → B3-D4-G4 →
   C4-E4-A4 → C4-F4-A4).
 
+**Sesiones de escucha grabadas: cómo se mejora el reconocimiento.** Keyla no
+aprende sola —no hay nada dentro que cambie con el uso—, pero cada vez que
+el autor toca siguiendo una canción produce un examen corregido: sus teclas
+son la respuesta buena. El botón **Grabar** guarda el audio capturado y las
+notas del teclado en la misma escala de tiempo; al parar se reanaliza la
+grabación y se escribe `informe.txt` con acuerdo, desfase, confusiones y la
+línea de tiempo *oyó / sugirió / tocaste*.
+
+- `evaluateListening` y `chordsFromNotes` (core/listen/) son funciones puras
+  y están testeadas con líneas de tiempo escritas a mano (invariante 8).
+- **El desfase se busca, no se supone.** Suma el retraso de las manos y el de
+  la ventana de análisis; sin corregirlo, cada cambio de acorde contaría como
+  error durante medio segundo aunque los dos hubieran acertado. Verificado con
+  teclas puestas 0,45 s tarde: sale 0,15 s, que son esos 0,45 menos los ~0,3
+  que el análisis va por detrás.
+- **El audio grabado sigue al reloj de pared.** En loopback una pausa no
+  entrega silencio, no entrega nada; sin rellenar el hueco, todo lo posterior
+  quedaría adelantado respecto a las teclas.
+- `Keyla.exe --analyse-session <carpeta>` reanaliza sin ventana: es lo que
+  permite probar otros ajustes sobre la misma canción sin volver a tocarla.
+- Las grabaciones viven en `%APPDATA%\Keyla\sesiones` y **no van a git ni a
+  `tests/`**: son canciones con derechos.
+
 Lo que falta para cerrar de verdad:
 
 - **El calibrador de loopback en la app.** El offset perceptual (invariante 7,

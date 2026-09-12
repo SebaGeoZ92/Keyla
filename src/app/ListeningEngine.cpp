@@ -56,6 +56,92 @@ void ListeningEngine::forget()
     published.progression.clear();
 }
 
+void ListeningEngine::startRecording()
+{
+    const juce::ScopedLock scoped (recordLock);
+
+    session = ListeningSessionData {};
+    session.deviceName = capture.deviceName();
+    session.sampleRate = capture.sampleRate();
+    recordStartSeconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    recordingFull = false;
+    recording = true;
+}
+
+juce::File ListeningEngine::stopRecording (juce::String& error)
+{
+    ListeningSessionData finished;
+
+    {
+        const juce::ScopedLock scoped (recordLock);
+
+        if (! recording)
+            return {};
+
+        recording = false;
+        finished = std::move (session);
+        session = ListeningSessionData {};
+    }
+
+    // El disco, fuera del cerrojo y fuera del hilo de captura.
+    return writeListeningSession (finished, error);
+}
+
+bool ListeningEngine::isRecording() const
+{
+    const juce::ScopedLock scoped (recordLock);
+    return recording;
+}
+
+bool ListeningEngine::recordingIsFull() const
+{
+    const juce::ScopedLock scoped (recordLock);
+    return recordingFull;
+}
+
+void ListeningEngine::recordNote (int pitch, bool isOn, double wallSeconds)
+{
+    const juce::ScopedLock scoped (recordLock);
+
+    if (! recording)
+        return;
+
+    session.notes.push_back ({ wallSeconds - recordStartSeconds, pitch, isOn });
+}
+
+void ListeningEngine::appendToRecording (const float* samples, int numSamples, double rate)
+{
+    const juce::ScopedLock scoped (recordLock);
+
+    if (! recording || recordingFull || rate <= 0.0)
+        return;
+
+    if (session.sampleRate <= 0.0)
+        session.sampleRate = rate;
+
+    // **El audio tiene que seguir al reloj de pared, no al revés.** En loopback,
+    // si la canción se pausa Windows no entrega silencio: no entrega nada. Sin
+    // rellenar ese hueco, todo lo que viniera después quedaría adelantado
+    // respecto a tus teclas, y el informe te acusaría de ir tarde por haber
+    // pausado la canción. Se rellena sólo si el hueco pasa de una décima: por
+    // debajo es el vaivén normal de llegada de los paquetes.
+    const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    const auto expectedEnd = static_cast<std::int64_t> ((now - recordStartSeconds) * session.sampleRate);
+    const auto written = static_cast<std::int64_t> (session.audio.size());
+    const auto tolerance = static_cast<std::int64_t> (0.1 * session.sampleRate);
+    const auto limit = static_cast<std::size_t> (maxRecordingSeconds * session.sampleRate);
+
+    if (written + numSamples < expectedEnd - tolerance)
+        session.audio.resize (std::min<std::size_t> (limit, static_cast<std::size_t> (expectedEnd - numSamples)), 0);
+
+    for (int i = 0; i < numSamples && session.audio.size() < limit; ++i)
+        session.audio.push_back (static_cast<std::int16_t> (
+            juce::jlimit (-32767, 32767, static_cast<int> (std::lrint (samples[i] * 32767.0f)))));
+
+    if (session.audio.size() >= limit)
+        recordingFull = true;
+}
+
 ListeningReading ListeningEngine::reading() const
 {
     const juce::ScopedLock scoped (lock);
@@ -82,6 +168,8 @@ void ListeningEngine::handleAudio (const float* samples, int numSamples)
 
     if (preparedRate <= 0.0)
         return;
+
+    appendToRecording (samples, numSamples, rate);
 
     double blockEnergy = 0.0;
 

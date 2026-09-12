@@ -50,7 +50,9 @@ add_library(keyla_core STATIC
         listen/HarmonyFromAudio.h
         listen/HarmonyFromAudio.cpp
         listen/Accompaniment.h
-        listen/Accompaniment.cpp)
+        listen/Accompaniment.cpp
+        listen/ListeningEvaluation.h
+        listen/ListeningEvaluation.cpp)
 
 target_include_directories(keyla_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
