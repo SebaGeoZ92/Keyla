@@ -40,7 +40,8 @@ int main (int argc, char* argv[])
     for (int i = 1; i < argc; ++i)
         args.add (juce::String (juce::CharPointer_UTF8 (argv[i])));
 
-    if (args.isEmpty() || (args[0] != "analyse" && args[0] != "tune" && args[0] != "tune-all"))
+    if (args.isEmpty() || (args[0] != "analyse" && args[0] != "tune"
+                           && args[0] != "tune-all" && args[0] != "tune-bass"))
     {
         std::cout << "uso: keyla_session analyse|tune [carpeta] [--from s] [--to s]\n";
         return 2;
@@ -49,11 +50,13 @@ int main (int argc, char* argv[])
     // "tune-all": todas las sesiones de más de dos minutos, a la vez. Las cortas
     // se dejan fuera porque suelen ser arranques en falso, y medio minuto
     // pesaría en la media lo mismo que una canción entera.
-    if (args[0] == "tune-all" || (args[0] == "tune" && args.size() > 2 && ! args[2].startsWith ("--")))
+    const bool bass = args[0] == "tune-bass";
+
+    if (args[0] == "tune-all" || bass || (args[0] == "tune" && args.size() > 2 && ! args[2].startsWith ("--")))
     {
         juce::Array<juce::File> folders;
 
-        if (args[0] == "tune-all")
+        if (args[0] == "tune-all" || bass)
         {
             for (const auto& candidate : keyla::app::listeningSessionsFolder()
                                              .findChildFiles (juce::File::findDirectories, false, "escucha-*"))
@@ -77,8 +80,14 @@ int main (int argc, char* argv[])
                    [] (const juce::File& a, const juce::File& b) { return a.getFileName() < b.getFileName(); });
 
         juce::String error;
-        const auto output = keyla::app::listeningSessionsFolder().getChildFile ("ajuste-conjunto.txt");
-        const auto text = keyla::app::tuneAcrossSessions (folders, output, error);
+        const auto output = keyla::app::listeningSessionsFolder()
+                                .getChildFile (bass ? "ajuste-bajo.txt" : "ajuste-conjunto.txt");
+
+        const auto text = keyla::app::tuneAcrossSessions (
+            folders,
+            bass ? keyla::app::bassTuningGrid() : keyla::app::generalTuningGrid(),
+            bass ? "ajuste del bajo sobre varias canciones" : "ajuste sobre varias canciones",
+            output, error);
 
         if (error.isNotEmpty())
         {

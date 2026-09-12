@@ -294,6 +294,16 @@ TEST_CASE ("Sigue una progresion y deduce la tonalidad", "[listen]")
 
     CHECK (matched == progression.size());
 
+    // Ninguno de esos acordes lleva otra nota en el bajo: todos estan en
+    // estado fundamental. Una barra aqui seria un bajo inventado — y eso es
+    // lo que pasaba cuando la memoria del bajo se reescalaba y el Do del
+    // primer acorde se quedaba sonando en los siguientes.
+    for (const auto& chord : heard)
+    {
+        INFO ("cifrado " << chord.symbol.toStdString());
+        CHECK_FALSE (chord.symbol.contains ("/"));
+    }
+
     CHECK (key.recognised);
     CHECK (key.tonicPitchClass == 0);
     CHECK_FALSE (key.minor);
@@ -630,4 +640,101 @@ TEST_CASE ("Sin tonalidad clara, se calla", "[listen][key]")
     };
 
     CHECK_FALSE (keyFromChordDurations (chaos).recognised);
+}
+
+namespace
+{
+    /** Perfil vacío de A1 (33) a C7 (96), como el del analizador. */
+    std::vector<double> emptyProfile() { return std::vector<double> (64, 0.0); }
+
+    void setPitch (std::vector<double>& profile, int pitch, double magnitude)
+    {
+        profile[static_cast<std::size_t> (pitch - 33)] = magnitude;
+    }
+}
+
+TEST_CASE ("El bajo se encuentra aunque la voz lo tape", "[listen][bass]")
+{
+    // El fallo del metodo antiguo en una mezcla: la voz en Do5 suena diez
+    // veces mas que el bajo en Re2. Con un umbral del 30 % del total el bajo
+    // no existe, y la nota mas grave "fuerte" que queda es una del acorde.
+    auto profile = emptyProfile();
+    setPitch (profile, 38, 1.0);    // Re2, el bajo
+    setPitch (profile, 66, 3.5);    // Fa#4, del acorde, fuera de la zona grave
+    setPitch (profile, 72, 10.0);   // Do5, la voz
+
+    HarmonyListener::Options options;
+    const auto bass = HarmonyListener::bassSalience (profile, 33, options);
+
+    const auto strongest = std::max_element (bass.begin(), bass.end()) - bass.begin();
+    CHECK (strongest == 2);                 // Re
+}
+
+TEST_CASE ("El fundamental del bajo gana a su quinta armonica", "[listen][bass]")
+{
+    // Un Re2 con el fundamental flojo, como sale por un altavoz pequeno: el
+    // segundo armonico (Re3) y el cuarto (Re4) suenan mas que el propio Re2,
+    // y el tercero (La3) mas que todos. Mirando notas sueltas en el grave, el
+    // bajo seria La. Sumando armonicos, es Re.
+    auto profile = emptyProfile();
+    setPitch (profile, 38, 0.3);    // Re2, flojo
+    setPitch (profile, 50, 0.8);    // Re3
+    setPitch (profile, 57, 1.0);    // La3, tercer armonico
+    setPitch (profile, 62, 0.6);    // Re4
+
+    HarmonyListener::Options options;
+    options.bassRangeTop = 57;      // que el La3 este dentro, para que compita
+
+    const auto bass = HarmonyListener::bassSalience (profile, 33, options);
+
+    CHECK (bass[2] > bass[9]);              // Re por delante de La
+}
+
+TEST_CASE ("Sin bajo, el bajo no opina", "[listen][bass]")
+{
+    // Un pasaje a capella o sin bajo: en el grave solo queda un resto. Si ese
+    // resto opinara, decidiria el acorde entero con un murmullo.
+    auto profile = emptyProfile();
+    setPitch (profile, 40, 0.02);
+    setPitch (profile, 67, 1.0);
+    setPitch (profile, 71, 0.9);
+
+    HarmonyListener::Options options;
+    const auto bass = HarmonyListener::bassSalience (profile, 33, options);
+
+    for (auto value : bass)
+        CHECK (value == 0.0);
+}
+
+TEST_CASE ("Un bajo fuerte no convierte una inversion en otro acorde", "[listen][bass]")
+{
+    // Do-Mi-Sol con Mi en el bajo: Do en primera inversion, C/E. El Mi suena
+    // mas porque el bajo lo refuerza en el cromagrama.
+    Chroma chroma;
+    chroma.energy = 1.0;
+    chroma.bins[0] = 1.0;     // Do
+    chroma.bins[4] = 1.3;     // Mi, reforzado por el bajo
+    chroma.bins[7] = 1.0;     // Sol
+
+    HarmonyListener::Options options;
+    options.bassIsRootBonus = 0.6;   // un bajo con mucho peso
+
+    SECTION ("sin la condicion de encaje, el bajo se impone y sale Mi menor")
+    {
+        // Documenta el fallo que motivo la condicion: a Mi menor le falta el
+        // Si, y aun asi gana por el premio del bajo.
+        options.bassFitGate = 0.0;
+        const auto estimate = HarmonyListener::estimate (chroma, 4, options);
+        CHECK (estimate.rootPitchClass == 4);
+        CHECK (estimate.quality == ChordQuality::minor);
+    }
+
+    SECTION ("con la condicion de encaje, sigue siendo Do")
+    {
+        options.bassFitGate = 0.3;
+        const auto estimate = HarmonyListener::estimate (chroma, 4, options);
+        CHECK (estimate.rootPitchClass == 0);
+        CHECK (estimate.quality == ChordQuality::major);
+        CHECK (estimate.symbol == "C/E");
+    }
 }

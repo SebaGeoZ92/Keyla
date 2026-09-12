@@ -281,10 +281,49 @@ Grabar sesiones cortas no sirve para ajustar: `tune-all` deja fuera las de
 menos de dos minutos, que suelen ser arranques en falso y pesarían en la media
 lo mismo que una canción entera.
 
-Lo que sigue sin resolver: las confusiones entre acordes que comparten dos
-notas (D↔Bm, A↔Bm, Em↔Bm). Ahí ya no ayudan las perillas; hace falta un bajo
-mejor detectado o un suavizado temporal que conozca las transiciones probables
-en una tonalidad.
+**El bajo, rehecho.** El método antiguo tomaba como bajo la nota más grave que
+llegara al 30 % de la más fuerte de todo el espectro, y en una mezcla fallaba
+por tres lados a la vez: la voz lo dejaba por debajo del umbral, el bajo de
+cumbia alterna fundamental y quinta, y en muchas mezclas los armónicos del bajo
+suenan más que su nota. Ahora (`bassSalience`) se mira sólo la zona grave con
+su propia escala, cada nota se suma con sus armónicos y lo que sale tiene
+memoria.
+
+| | Media | Cumbia | Bolero | Limpios | Inversiones |
+|---|---|---|---|---|---|
+| Método antiguo | 66 % / 55 % | 54 / 53 | 77 / 58 | 100 % | 100 % |
+| **Bajo nuevo** | **71 % / 56 %** | **59 / 55** | **83 / 57** | **100 %** | **100 %** |
+
+Cuatro trampas por el camino, las cuatro cazadas antes de dar números:
+
+- **Sumar armónicos sin límite convertía la voz en un bajo fantasma.** Un Do5
+  cantado es exactamente el tercer armónico de un Fa3. Cada armónico aporta
+  ahora como mucho el doble de lo que suena la propia nota: pueden reforzar una
+  nota que suena, no inventar una que no suena.
+- **El guardián de acordes limpios no podía ver el riesgo principal.** Todos
+  llevan la fundamental en el bajo, así que un bajo fuerte siempre les ayuda. Se
+  añadió un segundo guardián con 48 inversiones, y el ajuste que mejor puntuaba
+  en las canciones (72 %) resultó tener **0 %** en ellas: llamaba Mi menor a
+  todos los C/E. Toda subida de peso del bajo por encima de 0,08 las hundía.
+- **Eso no se arreglaba con perillas, era un defecto de modelo:** el bajo
+  sumaba puntos a candidatos que no encajaban. Ahora `bassFitGate` escala el
+  premio por la nota más floja del candidato — el bajo decide entre lecturas que
+  encajan, no convierte en acorde algo a lo que le faltan notas. Con eso los
+  mismos seis puntos salen con las inversiones al 100 %.
+- **La memoria del bajo se deshacía sola.** Se reescalaba por su propio máximo
+  en cada fotograma y un bajo apagado volvía al 100 %: una progresión salía
+  `C G/C Am/C F/C`. Los tests sólo miraban la fundamental y no lo vieron; ahora
+  hay uno que exige que no aparezcan barras inventadas. Y la barra del cifrado
+  sólo se escribe si el bajo **suena ahora**, aunque la decisión use la memoria.
+
+Se eligió peso 0,40 con encaje 0,35 y no el primero de la tabla (0,25/0,20):
+puntúan igual en las canciones, y el primero exige más encaje, que es lo
+prudente ante música que no se ha probado.
+
+Lo que sigue sin resolver: los tipos de acorde (el tipo apenas mejora, 55 → 56,
+porque el bajo decide la fundamental y no si es mayor o menor) y las séptimas
+del bolero. Lo siguiente que movería eso sería un suavizado temporal que conozca
+qué cambios de acorde son probables en una tonalidad.
 
 **`keyla_session`** (src/tools/session_tool/): analiza y ajusta sesiones grabadas
 desde consola. Existe aparte porque enlazar `Keyla.exe` exige cerrarla, y el

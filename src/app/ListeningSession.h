@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/listen/HarmonyFromAudio.h>
 #include <core/listen/ListeningEvaluation.h>
 
 #include <juce_core/juce_core.h>
@@ -74,7 +75,15 @@ juce::String tuneListeningSession (const juce::File& folder,
     funciona en todas. Y los acordes limpios hacen de guardián: un ajuste que
     los rompa queda descalificado por mucho que suba en las canciones. */
 juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
+                                 const std::vector<core::HarmonyListener::Options>& candidates,
+                                 const juce::String& title,
                                  const juce::File& outputFile,
                                  juce::String& error);
+
+/** Todas las perillas generales del reconocimiento. */
+std::vector<core::HarmonyListener::Options> generalTuningGrid();
+
+/** Sólo las del bajo, con lo demás fijo, más el método antiguo para comparar. */
+std::vector<core::HarmonyListener::Options> bassTuningGrid();
 
 } // namespace keyla::app

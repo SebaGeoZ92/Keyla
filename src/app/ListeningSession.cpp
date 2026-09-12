@@ -447,17 +447,56 @@ namespace
     {
         int root;
         core::ChordQuality quality;
-        core::Chroma chroma;
+        int lowestPitch;
+        std::vector<core::ChromaFrame> frames;
     };
 
     /** Los mismos 48 acordes que usa el test de acierto: doce fundamentales en
-        mayor, menor, séptima y menor séptima. Se renderizan y se escuchan una
-        vez; cada ajuste sólo repite la decisión, que es lo barato. */
-    std::vector<CleanChord> renderCleanChords()
+        mayor, menor, séptima y menor séptima, con la fundamental en el bajo.
+        Se renderizan y se escuchan una vez; cada ajuste sólo repite la
+        decisión. Dos segundos por acorde, para que dé tiempo a que el acuerdo
+        sostenido y la memoria del bajo lleguen a decidir. */
+    CleanChord renderChord (int root, core::ChordQuality quality, const std::vector<int>& pitches)
     {
         constexpr double rate = 48000.0;
         constexpr int block = 512;
 
+        auto piano = core::createInstrument (core::InstrumentId::piano);
+        piano->prepare (rate, block);
+
+        std::vector<core::StampedMidiEvent> events;
+
+        for (auto pitch : pitches)
+        {
+            core::StampedMidiEvent event;
+            event.message.bytes[0] = 0x90;
+            event.message.bytes[1] = static_cast<std::uint8_t> (pitch);
+            event.message.bytes[2] = 100;
+            event.message.size = 3;
+            event.renderOffset = 0;
+            events.push_back (event);
+        }
+
+        juce::AudioBuffer<float> buffer (2, block);
+        std::vector<float> mono;
+
+        for (int b = 0; b < static_cast<int> (2.0 * rate / block); ++b)
+        {
+            buffer.clear();
+            piano->process (buffer, b == 0 ? core::MidiEventSpan { events.data(), events.size() }
+                                           : core::MidiEventSpan { nullptr, 0 });
+
+            const auto* data = buffer.getReadPointer (0);
+            mono.insert (mono.end(), data, data + block);
+        }
+
+        CleanChord chord { root, quality, 0, {} };
+        chord.frames = core::computeChromaFrames (mono, rate, {}, &chord.lowestPitch);
+        return chord;
+    }
+
+    std::vector<CleanChord> renderCleanChords()
+    {
         std::vector<CleanChord> chords;
 
         for (auto quality : { core::ChordQuality::major, core::ChordQuality::minor,
@@ -465,45 +504,56 @@ namespace
         {
             for (int root = 0; root < 12; ++root)
             {
-                auto piano = core::createInstrument (core::InstrumentId::piano);
-                piano->prepare (rate, block);
-
-                std::vector<core::StampedMidiEvent> events;
+                std::vector<int> pitches;
 
                 for (auto interval : core::ChordRecognizer::intervalsFor (quality))
-                {
-                    core::StampedMidiEvent event;
-                    event.message.bytes[0] = 0x90;
-                    event.message.bytes[1] = static_cast<std::uint8_t> (48 + root + interval);
-                    event.message.bytes[2] = 100;
-                    event.message.size = 3;
-                    event.renderOffset = 0;
-                    events.push_back (event);
-                }
+                    pitches.push_back (48 + root + interval);
 
-                juce::AudioBuffer<float> buffer (2, block);
-                std::vector<float> mono;
-
-                for (int b = 0; b < static_cast<int> (rate / block); ++b)
-                {
-                    buffer.clear();
-                    piano->process (buffer, b == 0 ? core::MidiEventSpan { events.data(), events.size() }
-                                                   : core::MidiEventSpan { nullptr, 0 });
-
-                    const auto* data = buffer.getReadPointer (0);
-                    mono.insert (mono.end(), data, data + block);
-                }
-
-                const auto frames = core::computeChromaFrames (mono, rate);
-
-                if (! frames.empty())
-                    chords.push_back ({ root, quality, frames.back().chroma });
+                chords.push_back (renderChord (root, quality, pitches));
             }
         }
 
         return chords;
     }
 
+    /** Acordes **invertidos**: la tríada arriba y la tercera o la quinta en el
+        bajo. Do con Mi abajo sigue siendo Do (C/E), no Mi menor.
+
+        Es el guardián que le faltaba al primero. En los 48 acordes limpios la
+        fundamental siempre está en el bajo, así que un bajo con mucho peso
+        siempre les ayuda y nunca les puede hacer daño: ese guardián no podía
+        ver el riesgo de subirle el peso al bajo, que es precisamente confundir
+        una inversión con el acorde de su nota grave. */
+    std::vector<CleanChord> renderInvertedChords()
+    {
+        std::vector<CleanChord> chords;
+
+        for (auto quality : { core::ChordQuality::major, core::ChordQuality::minor })
+        {
+            const int third = quality == core::ChordQuality::major ? 4 : 3;
+
+            for (int root = 0; root < 12; ++root)
+            {
+                for (int bassInterval : { third, 7 })
+                {
+                    std::vector<int> pitches;
+
+                    for (auto interval : core::ChordRecognizer::intervalsFor (quality))
+                        pitches.push_back (60 + root + interval);
+
+                    pitches.push_back (36 + (root + bassInterval) % 12);
+                    chords.push_back (renderChord (root, quality, pitches));
+                }
+            }
+        }
+
+        return chords;
+    }
+
+    /** Acierto de tipo en los acordes limpios **por el camino completo**: con
+        el bajo buscado de verdad, su memoria y el acuerdo sostenido. La primera
+        versión de este guardián le daba el bajo ya resuelto al reconocedor, y
+        así no podía vigilar precisamente lo que ahora se está cambiando. */
     double cleanTypeAccuracy (const std::vector<CleanChord>& chords,
                               const core::HarmonyListener::Options& options)
     {
@@ -514,9 +564,13 @@ namespace
 
         for (const auto& chord : chords)
         {
-            const auto estimate = core::HarmonyListener::estimate (chord.chroma, chord.root, options);
+            core::HarmonyListener listener { options };
+            core::AudioChordEstimate last;
 
-            if (estimate.rootPitchClass == chord.root && estimate.quality == chord.quality)
+            for (const auto& frame : chord.frames)
+                last = listener.observe (frame.chroma, frame.profile, chord.lowestPitch);
+
+            if (last.recognised && last.rootPitchClass == chord.root && last.quality == chord.quality)
                 ++hits;
         }
 
@@ -524,7 +578,68 @@ namespace
     }
 }
 
+std::vector<core::HarmonyListener::Options> generalTuningGrid()
+{
+    std::vector<core::HarmonyListener::Options> grid;
+
+    // El bajo se deja con sus valores por defecto: tiene su propio barrido, y
+    // fijar aquí su peso —como hacía la primera versión— medía estas perillas
+    // con un bajo que ya no es el que usa Keyla.
+    for (double sharpening : { 1.0, 1.5, 2.0 })
+     for (double rare : { 0.10, 0.30, 0.50 })
+      for (double seventh : { 0.0, 0.02, 0.05, 0.08, 0.10 })
+       for (int agree : { 2, 3, 4 })
+       {
+           core::HarmonyListener::Options options;
+           options.sharpening = sharpening;
+           options.complexQualityPenalty = rare;
+           options.seventhQualityPenalty = seventh;
+           options.framesToAgree = agree;
+           grid.push_back (options);
+       }
+
+    return grid;
+}
+
+std::vector<core::HarmonyListener::Options> bassTuningGrid()
+{
+    std::vector<core::HarmonyListener::Options> grid;
+
+    // El método antiguo, para comparar contra él y no contra la nada.
+    // El método antiguo **entero**: también sin la condición de encaje, que es
+    // nueva. La primera versión de esta fila heredaba el encaje por defecto y
+    // comparaba contra una referencia que ya no era la antigua.
+    core::HarmonyListener::Options old;
+    old.useBassSalience = false;
+    old.bassIsRootBonus = 0.08;
+    old.bassFitGate = 0.0;
+    grid.push_back (old);
+
+    // Sólo se mueve lo del bajo. Lo demás se deja como lo dejaron las dos
+    // canciones: reajustar todo a la vez con dos canciones es la manera más
+    // rápida de volver a aprenderse las canciones en vez de mejorar.
+    for (double gate : { 0.0, 0.2, 0.35, 0.5 })
+     for (double weight : { 0.08, 0.25, 0.40, 0.60, 0.80 })
+      for (double memory : { 0.0, 0.8 })
+       for (int top : { 45, 48, 52 })
+        for (double sharpen : { 1.0, 2.0 })
+        {
+            core::HarmonyListener::Options options;
+            options.useBassSalience = true;
+            options.bassFitGate = gate;
+            options.bassIsRootBonus = weight;
+            options.bassMemory = memory;
+            options.bassRangeTop = top;
+            options.bassSharpening = sharpen;
+            grid.push_back (options);
+        }
+
+    return grid;
+}
+
 juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
+                                 const std::vector<core::HarmonyListener::Options>& candidates,
+                                 const juce::String& title,
                                  const juce::File& outputFile,
                                  juce::String& error)
 {
@@ -567,6 +682,7 @@ juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
     }
 
     const auto clean = renderCleanChords();
+    const auto inverted = renderInvertedChords();
 
     struct Trial
     {
@@ -574,13 +690,13 @@ juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
         std::vector<core::ListeningEvaluation> perSong;
         double meanRoot { 0.0 };
         double meanType { 0.0 };
-        double worstType { 1.0 };
         double cleanType { 0.0 };
+        double invertedType { 0.0 };
 
         double score() const { return 0.5 * (meanRoot + meanType); }
     };
 
-    const auto evaluate = [&songs, &clean] (const core::HarmonyListener::Options& options)
+    const auto evaluate = [&songs, &clean, &inverted] (const core::HarmonyListener::Options& options)
     {
         Trial trial;
         trial.options = options;
@@ -593,43 +709,42 @@ juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
             trial.perSong.push_back (result);
             trial.meanRoot += result.rootAgreement / songs.size();
             trial.meanType += result.fullAgreement / songs.size();
-            trial.worstType = std::min (trial.worstType, result.fullAgreement);
         }
 
         trial.cleanType = cleanTypeAccuracy (clean, options);
+        trial.invertedType = cleanTypeAccuracy (inverted, options);
         return trial;
     };
 
     std::vector<Trial> trials;
 
-    for (double sharpening : { 1.0, 1.5, 2.0 })
-     for (double rare : { 0.10, 0.30, 0.50 })
-      for (double seventh : { 0.0, 0.02, 0.05, 0.08, 0.10 })
-       for (double bass : { 0.03, 0.08, 0.15 })
-        for (int agree : { 3, 4 })
-        {
-            core::HarmonyListener::Options options;
-            options.sharpening = sharpening;
-            options.complexQualityPenalty = rare;
-            options.seventhQualityPenalty = seventh;
-            options.bassIsRootBonus = bass;
-            options.framesToAgree = agree;
-            trials.push_back (evaluate (options));
-        }
+    for (const auto& options : candidates)
+        trials.push_back (evaluate (options));
 
     std::sort (trials.begin(), trials.end(),
                [] (const Trial& a, const Trial& b) { return a.score() > b.score(); });
 
     const auto describe = [] (const Trial& t)
     {
+        const auto& o = t.options;
         juce::String line;
-        line << "agudizar " << juce::String (t.options.sharpening, 1)
-             << "  raros " << juce::String (t.options.complexQualityPenalty, 2)
-             << "  sept " << juce::String (t.options.seventhQualityPenalty, 2)
-             << "  bajo " << juce::String (t.options.bassIsRootBonus, 2)
-             << "  fotogr " << t.options.framesToAgree
-             << "   ->  media " << percent (t.meanRoot) << " / " << percent (t.meanType)
-             << "   limpios " << percent (t.cleanType) << "   [";
+
+        line << "agud " << juce::String (o.sharpening, 1)
+             << " raros " << juce::String (o.complexQualityPenalty, 2)
+             << " sept " << juce::String (o.seventhQualityPenalty, 2)
+             << " fotogr " << o.framesToAgree
+             << " | bajo " << (o.useBassSalience ? "nuevo" : "ANTIGUO")
+             << " peso " << juce::String (o.bassIsRootBonus, 2);
+
+        if (o.useBassSalience)
+            line << " encaje " << juce::String (o.bassFitGate, 2)
+                 << " memoria " << juce::String (o.bassMemory, 1)
+                 << " hasta " << o.bassRangeTop
+                 << " agud " << juce::String (o.bassSharpening, 0);
+
+        line << "  ->  media " << percent (t.meanRoot) << " / " << percent (t.meanType)
+             << "  limpios " << percent (t.cleanType)
+             << "  invert " << percent (t.invertedType) << "  [";
 
         for (std::size_t i = 0; i < t.perSong.size(); ++i)
             line << (i > 0 ? "  " : "") << percent (t.perSong[i].rootAgreement)
@@ -639,10 +754,11 @@ juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
     };
 
     juce::StringArray report;
-    report.add ("Keyla - ajuste sobre varias canciones");
+    report.add ("Keyla - " + title);
     report.add ("Ajustes probados: " + juce::String (static_cast<int> (trials.size())));
-    report.add ("Cada fila: acorde / tipo, de media y por cancion. 'limpios' = acierto de tipo");
-    report.add ("en los 48 acordes del piano de Keyla. Por debajo del 90 % el ajuste queda descalificado.");
+    report.add ("Cada fila: acorde / tipo, de media y por cancion. 'limpios' = acierto de tipo en los");
+    report.add ("48 acordes del piano de Keyla, por el camino completo; 'invert' = los 48 con la tercera o");
+    report.add ("la quinta en el bajo. Por debajo del 90 % en cualquiera de los dos, descalificado.");
     report.add ({});
     report.add ("CANCIONES");
 
@@ -655,13 +771,13 @@ juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
     report.add ("  " + describe (evaluate (core::HarmonyListener::Options {})));
 
     report.add ({});
-    report.add ("LOS 20 MEJORES QUE NO ROMPEN LOS ACORDES LIMPIOS");
+    report.add ("LOS 20 MEJORES QUE NO ROMPEN NI LOS LIMPIOS NI LAS INVERSIONES");
 
     int shown = 0;
 
     for (const auto& trial : trials)
     {
-        if (trial.cleanType < 0.90)
+        if (trial.cleanType < 0.90 || trial.invertedType < 0.90)
             continue;
 
         report.add ("  " + describe (trial));
@@ -671,7 +787,7 @@ juce::String tuneAcrossSessions (const juce::Array<juce::File>& folders,
     }
 
     report.add ({});
-    report.add ("LOS 5 MEJORES SIN MIRAR LOS LIMPIOS (lo que costaria no protegerlos)");
+    report.add ("LOS 5 MEJORES SIN MIRAR LOS LIMPIOS");
 
     for (std::size_t i = 0; i < std::min<std::size_t> (5, trials.size()); ++i)
         report.add ("  " + describe (trials[i]));

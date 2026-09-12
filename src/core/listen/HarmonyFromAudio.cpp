@@ -80,6 +80,83 @@ AudioChordEstimate HarmonyListener::estimate (const Chroma& chroma,
                                               int bassPitchClass,
                                               const Options& options)
 {
+    // Una sola nota de bajo es la evidencia gradual con todo el peso en ella.
+    std::array<double, 12> evidence {};
+
+    if (bassPitchClass >= 0)
+        evidence[static_cast<std::size_t> (bassPitchClass % 12)] = 1.0;
+
+    return estimate (chroma, evidence, bassPitchClass, options);
+}
+
+std::array<double, 12> HarmonyListener::bassSalience (const std::vector<double>& profile,
+                                                      int lowestPitch,
+                                                      const Options& options)
+{
+    std::array<double, 12> result {};
+
+    if (profile.empty())
+        return result;
+
+    const auto magnitudeAt = [&profile, lowestPitch] (int pitch)
+    {
+        const int index = pitch - lowestPitch;
+        return index >= 0 && index < static_cast<int> (profile.size())
+             ? profile[static_cast<std::size_t> (index)] : 0.0;
+    };
+
+    const double overallPeak = *std::max_element (profile.begin(), profile.end());
+
+    if (overallPeak <= 0.0)
+        return result;
+
+    double bassPeak = 0.0;
+    double loudestInBass = 0.0;
+
+    for (int pitch = lowestPitch; pitch <= options.bassRangeTop; ++pitch)
+    {
+        loudestInBass = std::max (loudestInBass, magnitudeAt (pitch));
+
+        // Suma armónica: la nota más sus armónicos 2, 3 y 4 (octava, octava y
+        // quinta, dos octavas), cada uno con menos peso. Una nota de bajo cuyo
+        // fundamental suena flojo pero cuyos armónicos suenan fuerte sigue
+        // ganando a su propio tercer armónico, que es una quinta más arriba y
+        // es justo la confusión que el bajo tenía que deshacer.
+        //
+        // **Cada armónico aporta como mucho el doble de lo que suena la nota.**
+        // La primera versión no tenía este límite y convertía la voz en un bajo
+        // fantasma: un Do5 cantado es exactamente el tercer armónico de un Fa3,
+        // y sumado sin límite fabricaba un Fa en el grave donde no sonaba
+        // ninguno — más fuerte cuanto más fuerte cantaba. Los armónicos pueden
+        // reforzar una nota que suena; no pueden inventar una que no suena.
+        const double own = magnitudeAt (pitch);
+        const auto harmonic = [own] (double weighted) { return std::min (weighted, 2.0 * own); };
+
+        const double salience = own
+                              + harmonic (0.50 * magnitudeAt (pitch + 12))
+                              + harmonic (0.33 * magnitudeAt (pitch + 19))
+                              + harmonic (0.25 * magnitudeAt (pitch + 24));
+
+        auto& slot = result[static_cast<std::size_t> (pitchClassOf (pitch))];
+        slot = std::max (slot, salience);
+        bassPeak = std::max (bassPeak, salience);
+    }
+
+    // Con su propia escala, pero sólo si en el grave suena algo de verdad.
+    if (bassPeak <= 0.0 || loudestInBass < options.bassPresenceRatio * overallPeak)
+        return {};
+
+    for (auto& value : result)
+        value = std::pow (value / bassPeak, options.bassSharpening);
+
+    return result;
+}
+
+AudioChordEstimate HarmonyListener::estimate (const Chroma& chroma,
+                                              const std::array<double, 12>& bassEvidence,
+                                              int bassPitchClass,
+                                              const Options& options)
+{
     AudioChordEstimate result;
     result.bassPitchClass = bassPitchClass;
 
@@ -111,6 +188,8 @@ AudioChordEstimate HarmonyListener::estimate (const Chroma& chroma,
     int bestRoot = -1;
     ChordQuality bestQuality = ChordQuality::unknown;
 
+    const double loudest = *std::max_element (sharpened.begin(), sharpened.end());
+
     for (auto quality : audioQualities())
     {
         const auto intervals = ChordRecognizer::intervalsFor (quality);
@@ -131,9 +210,26 @@ AudioChordEstimate HarmonyListener::estimate (const Chroma& chroma,
 
             score /= templateNorm;
 
-            // El bajo manda: desempata entre lecturas que comparten notas.
-            if (root == bassPitchClass)
-                score += options.bassIsRootBonus;
+            // El bajo manda: desempata entre lecturas que comparten notas. Con
+            // evidencia gradual, cada fundamental suma según lo que suene en el
+            // grave; con una sola nota, es un premio a ésa.
+            //
+            // Pero sólo entre lecturas que encajan: el premio se escala por la
+            // nota más floja del candidato. Ver `bassFitGate`.
+            double fit = 1.0;
+
+            if (options.bassFitGate > 0.0 && loudest > 0.0)
+            {
+                double weakest = 1.0;
+
+                for (auto interval : intervals)
+                    weakest = std::min (weakest,
+                                        sharpened[static_cast<std::size_t> ((root + interval) % 12)] / loudest);
+
+                fit = std::clamp (weakest / options.bassFitGate, 0.0, 1.0);
+            }
+
+            score += options.bassIsRootBonus * bassEvidence[static_cast<std::size_t> (root)] * fit;
 
             const bool isSeventh = quality == ChordQuality::dominant7
                                 || quality == ChordQuality::minor7
@@ -346,6 +442,7 @@ void HarmonyListener::reset()
     candidate = AudioChordEstimate {};
     agreement = 0;
     keyAccumulator = {};
+    smoothedBass = {};
     chordFrames = {};
     history.clear();
 }
@@ -360,12 +457,41 @@ AudioChordEstimate HarmonyListener::observe (const Chroma& chroma,
         return stable;
     }
 
-    // El bajo: la altura sonando más grave que llega al umbral. Se busca sobre
-    // el perfil por altura y no sobre el cromagrama porque el cromagrama ya ha
-    // plegado las octavas y ahí la palabra "grave" no significa nada.
+    // El bajo. Se busca sobre el perfil por altura y no sobre el cromagrama
+    // porque el cromagrama ya ha plegado las octavas y ahí "grave" no significa
+    // nada.
     int bassPitchClass = -1;
+    std::array<double, 12> bassEvidence {};
 
-    if (! pitchProfile.empty())
+    if (opts.useBassSalience)
+    {
+        const auto current = bassSalience (pitchProfile, lowestPitch, opts);
+
+        // La evidencia es la memoria tal cual, **sin volver a escalarla**. La
+        // primera versión la dividía por su propio máximo en cada fotograma, y
+        // eso deshacía la memoria: un bajo que había dejado de sonar se iba
+        // apagando y el reescalado lo devolvía al 100 %. En una progresión, el
+        // Do del primer acorde se quedaba en el bajo para siempre y Keyla
+        // escribía G/C, Am/C y F/C sin que sonara ningún Do.
+        for (std::size_t i = 0; i < 12; ++i)
+        {
+            smoothedBass[i] = opts.bassMemory * smoothedBass[i] + (1.0 - opts.bassMemory) * current[i];
+            bassEvidence[i] = smoothedBass[i];
+        }
+
+        // **Para decidir se usa la memoria; para escribir la barra, tiene que
+        // sonar ahora.** Un bajo que se está apagando puede inclinar la
+        // decisión —para eso está la memoria—, pero no se escribe como si
+        // sonara. Con sólo la memoria, justo al cambiar de Do a Sol al Do le
+        // quedaba un 51 % y salía G/C. Y exigir las dos cosas evita también
+        // que en una cumbia la barra parpadee con la quinta de paso del bajo.
+        const auto strongest = std::max_element (bassEvidence.begin(), bassEvidence.end());
+        const auto index = static_cast<std::size_t> (strongest - bassEvidence.begin());
+
+        if (*strongest >= 0.5 && current[index] >= 0.5)
+            bassPitchClass = static_cast<int> (index);
+    }
+    else if (! pitchProfile.empty())
     {
         const double peak = *std::max_element (pitchProfile.begin(), pitchProfile.end());
         const double threshold = peak * opts.bassThreshold;
@@ -380,7 +506,10 @@ AudioChordEstimate HarmonyListener::observe (const Chroma& chroma,
         }
     }
 
-    const auto frame = estimate (chroma, bassPitchClass, opts);
+    if (! opts.useBassSalience && bassPitchClass >= 0)
+        bassEvidence[static_cast<std::size_t> (bassPitchClass)] = 1.0;
+
+    const auto frame = estimate (chroma, bassEvidence, bassPitchClass, opts);
 
     // La tonalidad se acumula sobre todo lo oído, no sobre el fotograma: una
     // tonalidad es una propiedad de la canción entera.
