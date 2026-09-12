@@ -136,6 +136,41 @@ alineación por distancia de edición y las métricas del doc 02 §5: sesgo,
 consistencia, deriva de tempo, regularidad y uniformidad de velocity. La
 aplicación tiene ya los dos modos: espera y tempo.
 
+**Keyla escuchando (a medias, y la mitad hecha es la difícil).** `core/listen/`
+saca acordes y tonalidad de audio, sin que nadie le diga qué notas hay. Medido
+sobre el propio catálogo de instrumentos —que es material honesto, porque el
+piano tiene 24 parciales y son los armónicos los que hacen difícil esto—:
+**100 % de acierto en fundamental y calidad sobre 48 acordes**, y sigue una
+progresión entera deduciendo la tonalidad.
+
+- `Chromagram` hace análisis de **Q constante**: una ventana distinta por nota,
+  todas con el mismo número de ciclos. Una FFT reparte la frecuencia en trozos
+  iguales y la música no: entre Do1 y Do#1 hay 4 Hz y entre Do6 y Do#6 hay 62.
+  El precio es que el grave necesita ventanas largas y por eso siempre sale más
+  borroso; no es un bug, es el compromiso entre tiempo y frecuencia.
+- `HarmonyListener` compara contra las **mismas plantillas** que el reconocedor
+  de MIDI (`ChordRecognizer::intervalsFor`), agudiza el cromagrama para hundir
+  los armónicos parásitos, y exige acuerdo sostenido antes de cambiar el
+  cifrado. Reporta confianza **y margen**: una confianza de 0,9 con margen de
+  0,002 significa que había dos lecturas empatadas.
+- **El bajo manda, también aquí.** No es un refinamiento: Do#m7 y Mi6 son las
+  mismas cuatro notas y sus plantillas empatan al decimosexto decimal. Sin
+  desempatar por el bajo, el reconocedor se quedaba mudo en un acorde de cada
+  ocho. Con la regla puesta, el acierto pasó del 89,6 % al 100 %.
+
+Lo que falta para que Keyla escuche de verdad la tarjeta de sonido:
+
+- **La captura.** JUCE **no trae loopback de WASAPI** —cero apariciones en todo
+  `juce_audio_devices`; sólo `shared`, `exclusive` y `sharedLowLatency`—, así que
+  hay que escribirlo con COM en `src/app/`. Y hay un choque de fondo: el
+  loopback de Windows no funciona sobre un endpoint abierto en **exclusivo**,
+  que es como Keyla suena hoy. Escuchar y sonar en exclusivo por la misma
+  tarjeta son incompatibles; habrá que caer a compartido mientras se escucha, y
+  en este equipo eso sube el buffer mínimo de 144 a 480.
+- **Las sugerencias.** La maquinaria ya está: `ProgressionGenerator` sabe de
+  enlace de voces e inversiones, y el escuchador ya da tonalidad y grado. Falta
+  unirlos y exponer las funciones de voicing, que hoy son privadas del .cpp.
+
 Lo que falta para cerrar de verdad:
 
 - **El calibrador de loopback en la app.** El offset perceptual (invariante 7,

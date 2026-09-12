@@ -9,7 +9,8 @@ add_executable(keyla_tests
         ExerciseTests.cpp
         EvaluationTests.cpp
         MidiImportTests.cpp
-        ProgressionTests.cpp)
+        ProgressionTests.cpp
+        ListenTests.cpp)
 
 target_link_libraries(keyla_tests PRIVATE
         keyla_core

@@ -609,20 +609,33 @@ TEST_CASE ("Ningun instrumento se sale del presupuesto de CPU", "[instrument][ca
             events.push_back (event);
         }
 
-        const auto started = std::chrono::steady_clock::now();
+        // Se mide tres veces y se toma **el mínimo**, no la media. Un reloj de
+        // pared en una máquina compartida sólo puede equivocarse hacia arriba:
+        // si otro proceso roba el núcleo, la medida sube, nunca baja. El mínimo
+        // es por tanto la estimación menos contaminada, y además es lo que hace
+        // que este test no falle por compilar algo en otra ventana — que es
+        // exactamente como se estrenó.
+        double load = 1.0e9;
 
-        for (int block = 0; block < totalBlocks; ++block)
+        for (int repetition = 0; repetition < 3; ++repetition)
         {
-            buffer.clear();
+            instrument->reset();
 
-            if (block % retriggerEvery == 0)
-                instrument->process (buffer, MidiEventSpan { events.data(), events.size() });
-            else
-                instrument->process (buffer, MidiEventSpan { nullptr, 0 });
+            const auto started = std::chrono::steady_clock::now();
+
+            for (int block = 0; block < totalBlocks; ++block)
+            {
+                buffer.clear();
+
+                if (block % retriggerEvery == 0)
+                    instrument->process (buffer, MidiEventSpan { events.data(), events.size() });
+                else
+                    instrument->process (buffer, MidiEventSpan { nullptr, 0 });
+            }
+
+            const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started;
+            load = std::min (load, elapsed.count() / seconds);
         }
-
-        const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started;
-        const double load = elapsed.count() / seconds;
 
         std::cout << "  [cpu] " << instrumentName (id).toStdString()
                   << "\t" << (load * 100.0) << " % de tiempo real\n";

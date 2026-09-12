@@ -1,0 +1,310 @@
+// Keyla escuchando. La pregunta que estos tests contestan es una sola: ¿puede
+// sacar el cifrado de un audio, sin que nadie le diga qué notas hay?
+//
+// El material de prueba sale gratis: se le da a escuchar **lo que ella misma
+// toca**. Es un banco de pruebas honesto porque los instrumentos de Keyla tienen
+// armónicos de verdad —el piano llega a 24 parciales— y son justo los armónicos
+// los que hacen difícil este problema. Un test con senoides puras diría que todo
+// funciona y no probaría nada.
+
+#include <core/instrument/Instruments.h>
+#include <core/listen/Chromagram.h>
+#include <core/listen/HarmonyFromAudio.h>
+#include <core/music/Pitch.h>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <iostream>
+#include <vector>
+
+using namespace keyla::core;
+
+namespace
+{
+    constexpr double sampleRate = 48000.0;
+    constexpr int blockSize = 512;
+
+    RawMidiMessage noteOn (int pitch, int velocity)
+    {
+        RawMidiMessage m;
+        m.bytes[0] = 0x90;
+        m.bytes[1] = static_cast<std::uint8_t> (pitch);
+        m.bytes[2] = static_cast<std::uint8_t> (velocity);
+        m.size = 3;
+        return m;
+    }
+
+    /** Toca las notas a la vez y devuelve el audio en mono. */
+    std::vector<float> renderMono (IInstrument& instrument, const std::vector<int>& pitches,
+                                   double seconds, int velocity = 100)
+    {
+        instrument.prepare (sampleRate, blockSize);
+
+        std::vector<StampedMidiEvent> events;
+
+        for (auto pitch : pitches)
+        {
+            StampedMidiEvent event;
+            event.message = noteOn (pitch, velocity);
+            event.renderOffset = 0;
+            events.push_back (event);
+        }
+
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        std::vector<float> mono;
+
+        const auto totalBlocks = static_cast<int> (seconds * sampleRate / blockSize);
+        mono.reserve (static_cast<std::size_t> (totalBlocks * blockSize));
+
+        for (int block = 0; block < totalBlocks; ++block)
+        {
+            buffer.clear();
+
+            if (block == 0)
+                instrument.process (buffer, MidiEventSpan { events.data(), events.size() });
+            else
+                instrument.process (buffer, MidiEventSpan { nullptr, 0 });
+
+            const auto* data = buffer.getReadPointer (0);
+
+            for (int i = 0; i < blockSize; ++i)
+                mono.push_back (data[i]);
+        }
+
+        return mono;
+    }
+
+    /** Notas de un acorde en estado fundamental alrededor del Do central. */
+    std::vector<int> chordNotes (int rootPitchClass, ChordQuality quality, int octaveBase = 48)
+    {
+        std::vector<int> notes;
+
+        for (auto interval : ChordRecognizer::intervalsFor (quality))
+            notes.push_back (octaveBase + rootPitchClass + interval);
+
+        return notes;
+    }
+
+    /** Le da a escuchar el audio entero y devuelve el último fotograma. */
+    struct Heard
+    {
+        Chroma chroma;
+        std::vector<double> profile;
+        bool valid { false };
+    };
+
+    Heard listen (ChromaAnalyser& analyser, const std::vector<float>& audio)
+    {
+        analyser.push (audio.data(), static_cast<int> (audio.size()));
+
+        Heard heard;
+        Chroma frame;
+
+        while (analyser.popFrame (frame))
+        {
+            heard.chroma = frame;
+            heard.profile = analyser.pitchProfile();
+            heard.valid = true;
+        }
+
+        return heard;
+    }
+}
+
+TEST_CASE ("Keyla saca un acorde de su propio piano", "[listen]")
+{
+    ChromaAnalyser analyser;
+    analyser.prepare (sampleRate);
+
+    auto piano = createInstrument (InstrumentId::piano);
+    const auto audio = renderMono (*piano, { 48, 52, 55 }, 1.2);      // Do mayor
+
+    const auto heard = listen (analyser, audio);
+    REQUIRE (heard.valid);
+
+    const auto estimate = HarmonyListener::estimate (heard.chroma, 0, HarmonyListener::Options {});
+
+    INFO ("oido: " << estimate.symbol.toStdString()
+          << "  confianza " << estimate.confidence
+          << "  margen " << estimate.margin);
+
+    CHECK (estimate.recognised);
+    CHECK (estimate.rootPitchClass == 0);
+    CHECK (estimate.quality == ChordQuality::major);
+}
+
+TEST_CASE ("El silencio no produce acordes", "[listen]")
+{
+    // Un cromagrama de silencio, normalizado, se parece a cualquier cosa. Es la
+    // forma más fácil que hay de que Keyla se invente acordes en los huecos de
+    // una cancion, y por eso la energia se mira antes de normalizar.
+    ChromaAnalyser analyser;
+    analyser.prepare (sampleRate);
+
+    const std::vector<float> silence (static_cast<std::size_t> (sampleRate), 0.0f);
+    const auto heard = listen (analyser, silence);
+
+    REQUIRE (heard.valid);
+    CHECK (heard.chroma.isSilent());
+
+    const auto estimate = HarmonyListener::estimate (heard.chroma, -1, HarmonyListener::Options {});
+    CHECK_FALSE (estimate.recognised);
+}
+
+TEST_CASE ("Acierto sobre las doce tonicas y varias calidades", "[listen][accuracy]")
+{
+    // La cifra que de verdad importa. Se imprime porque es una medida, no un
+    // aprobado: si algún día baja, conviene ver cuánto.
+    ChromaAnalyser analyser;
+    analyser.prepare (sampleRate);
+
+    const std::vector<ChordQuality> qualities {
+        ChordQuality::major, ChordQuality::minor,
+        ChordQuality::dominant7, ChordQuality::minor7
+    };
+
+    int total = 0;
+    int rootHits = 0;
+    int fullHits = 0;
+
+    for (auto quality : qualities)
+    {
+        for (int root = 0; root < 12; ++root)
+        {
+            auto piano = createInstrument (InstrumentId::piano);
+            const auto audio = renderMono (*piano, chordNotes (root, quality), 1.0);
+
+            const auto heard = listen (analyser, audio);
+            REQUIRE (heard.valid);
+
+            const auto estimate = HarmonyListener::estimate (heard.chroma,
+                                                             heard.chroma.isSilent() ? -1 : root,
+                                                             HarmonyListener::Options {});
+
+            ++total;
+
+            if (estimate.rootPitchClass == root)
+            {
+                ++rootHits;
+
+                if (estimate.quality == quality)
+                    ++fullHits;
+            }
+
+            if (estimate.rootPitchClass != root || estimate.quality != quality)
+                std::cout << "  [oido] " << pitchClassName (root).toStdString()
+                          << ChordRecognizer::qualitySymbol (quality).toStdString()
+                          << " -> " << estimate.symbol.toStdString()
+                          << "  (conf " << estimate.confidence
+                          << " margen " << estimate.margin << ")\n";
+        }
+    }
+
+    std::cout << "  [escucha] fundamental " << (100.0 * rootHits / total) << " %"
+              << "   fundamental+calidad " << (100.0 * fullHits / total) << " %"
+              << "   sobre " << total << " acordes\n";
+
+    CHECK (rootHits * 100 >= total * 95);
+    CHECK (fullHits * 100 >= total * 90);
+}
+
+TEST_CASE ("Funciona con instrumentos de timbre muy distinto", "[listen]")
+{
+    // El piano tiene 24 parciales; la flauta tiene cuatro y el órgano mete una
+    // quinta grave en el registro. Si el reconocimiento sólo funcionara con el
+    // piano, no serviría para escuchar una cancion de verdad.
+    for (auto id : { InstrumentId::organ, InstrumentId::strings,
+                     InstrumentId::guitar, InstrumentId::flute })
+    {
+        ChromaAnalyser analyser;
+        analyser.prepare (sampleRate);
+
+        auto instrument = createInstrument (id);
+        const auto audio = renderMono (*instrument, { 53, 57, 60, 65 }, 1.2);   // Fa mayor
+
+        const auto heard = listen (analyser, audio);
+        REQUIRE (heard.valid);
+
+        const auto estimate = HarmonyListener::estimate (heard.chroma, 5, HarmonyListener::Options {});
+
+        INFO (instrumentName (id).toStdString() << " -> " << estimate.symbol.toStdString()
+              << " (conf " << estimate.confidence << ")");
+
+        CHECK (estimate.rootPitchClass == 5);
+    }
+}
+
+TEST_CASE ("Sigue una progresion y deduce la tonalidad", "[listen]")
+{
+    // Do - Sol - La menor - Fa: la progresión de media radio. Se le da a oír
+    // seguida, como llegaría de una canción, y se le pregunta por dónde ha
+    // pasado y en qué tonalidad está.
+    ChromaAnalyser analyser;
+    analyser.prepare (sampleRate);
+
+    HarmonyListener listener;
+
+    const std::vector<std::pair<int, ChordQuality>> progression {
+        { 0, ChordQuality::major },     // Do
+        { 7, ChordQuality::major },     // Sol
+        { 9, ChordQuality::minor },     // La menor
+        { 5, ChordQuality::major }      // Fa
+    };
+
+    for (const auto& [root, quality] : progression)
+    {
+        auto piano = createInstrument (InstrumentId::piano);
+        const auto audio = renderMono (*piano, chordNotes (root, quality), 1.4);
+
+        analyser.push (audio.data(), static_cast<int> (audio.size()));
+
+        Chroma frame;
+
+        while (analyser.popFrame (frame))
+            listener.observe (frame, analyser.pitchProfile(), analyser.lowestPitch());
+    }
+
+    const auto heard = listener.progression();
+
+    std::cout << "  [progresion] ";
+
+    for (const auto& chord : heard)
+        std::cout << chord.symbol.toStdString() << ' ';
+
+    const auto key = listener.key();
+    std::cout << "  tonalidad: " << key.name.toStdString()
+              << " (" << key.confidence << ")\n";
+
+    // No se exige la secuencia exacta —un acorde puede colarse en la transición
+    // entre dos— sino que los cuatro de verdad estén y en orden.
+    std::vector<int> roots;
+
+    for (const auto& chord : heard)
+        roots.push_back (chord.rootPitchClass);
+
+    std::size_t matched = 0;
+
+    for (auto root : roots)
+        if (matched < progression.size() && root == progression[matched].first)
+            ++matched;
+
+    CHECK (matched == progression.size());
+
+    CHECK (key.recognised);
+    CHECK (key.tonicPitchClass == 0);
+    CHECK_FALSE (key.minor);
+}
+
+TEST_CASE ("La ventana de analisis se declara", "[listen]")
+{
+    // Un acorde detectado no es "ahora": es "hace una ventana". Si esa cifra no
+    // se puede consultar, la interfaz acabará enseñando el acorde como si fuera
+    // del instante y no lo es.
+    ChromaAnalyser analyser;
+    analyser.prepare (sampleRate);
+
+    CHECK (analyser.windowSeconds() > 0.3);
+    CHECK (analyser.windowSeconds() < 1.2);
+}
