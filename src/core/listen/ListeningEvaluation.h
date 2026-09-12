@@ -93,6 +93,7 @@ ListeningEvaluation evaluateListening (const std::vector<TimedChord>& heard,
                                        const std::vector<TimedChord>& played,
                                        double durationSeconds,
                                        double maxLagSeconds = 2.0,
-                                       double stepSeconds = 0.05);
+                                       double stepSeconds = 0.05,
+                                       double startSeconds = 0.0);
 
 } // namespace keyla::core

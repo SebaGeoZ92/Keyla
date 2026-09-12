@@ -52,7 +52,9 @@ add_library(keyla_core STATIC
         listen/Accompaniment.h
         listen/Accompaniment.cpp
         listen/ListeningEvaluation.h
-        listen/ListeningEvaluation.cpp)
+        listen/ListeningEvaluation.cpp
+        listen/ChordTimeline.h
+        listen/ChordTimeline.cpp)
 
 target_include_directories(keyla_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 

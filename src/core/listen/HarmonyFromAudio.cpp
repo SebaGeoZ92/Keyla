@@ -135,6 +135,15 @@ AudioChordEstimate HarmonyListener::estimate (const Chroma& chroma,
             if (root == bassPitchClass)
                 score += options.bassIsRootBonus;
 
+            const bool isSeventh = quality == ChordQuality::dominant7
+                                || quality == ChordQuality::minor7
+                                || quality == ChordQuality::major7;
+
+            if (isSeventh)
+                score -= options.seventhQualityPenalty;
+            else if (quality != ChordQuality::major && quality != ChordQuality::minor)
+                score -= options.complexQualityPenalty;
+
             if (score > best)
             {
                 runnerUp = best;
@@ -177,12 +186,167 @@ AudioChordEstimate HarmonyListener::estimate (const Chroma& chroma,
     return result;
 }
 
+namespace
+{
+    enum class Family { major, minor, diminished, other };
+
+    Family familyOf (ChordQuality quality)
+    {
+        switch (quality)
+        {
+            case ChordQuality::major:
+            case ChordQuality::dominant7:
+            case ChordQuality::major7:
+            case ChordQuality::major6:
+                return Family::major;
+
+            case ChordQuality::minor:
+            case ChordQuality::minor7:
+            case ChordQuality::minor6:
+            case ChordQuality::minorMajor7:
+                return Family::minor;
+
+            case ChordQuality::diminished:
+            case ChordQuality::halfDiminished7:
+            case ChordQuality::diminished7:
+                return Family::diminished;
+
+            default:
+                return Family::other;
+        }
+    }
+
+    struct Degree
+    {
+        int semitones;
+        Family family;
+    };
+
+    // Los acordes que pertenecen a cada modo. En menor entran los dos quintos
+    // grados, el natural y el armónico, porque en música popular los dos son
+    // igual de normales.
+    const Degree majorDegrees[] = {
+        { 0, Family::major }, { 2, Family::minor }, { 4, Family::minor }, { 5, Family::major },
+        { 7, Family::major }, { 9, Family::minor }, { 11, Family::diminished }
+    };
+
+    const Degree minorDegrees[] = {
+        { 0, Family::minor }, { 2, Family::diminished }, { 3, Family::major }, { 5, Family::minor },
+        { 7, Family::minor }, { 7, Family::major }, { 8, Family::major }, { 10, Family::major }
+    };
+
+    bool belongs (const ChordDuration& chord, int tonic, bool minor)
+    {
+        const int interval = ((chord.rootPitchClass - tonic) % 12 + 12) % 12;
+        const auto family = familyOf (chord.quality);
+
+        if (minor)
+        {
+            for (const auto& degree : minorDegrees)
+                if (degree.semitones == interval && degree.family == family)
+                    return true;
+        }
+        else
+        {
+            for (const auto& degree : majorDegrees)
+                if (degree.semitones == interval && degree.family == family)
+                    return true;
+        }
+
+        return false;
+    }
+}
+
+KeyEstimate keyFromChordDurations (const std::vector<ChordDuration>& chords)
+{
+    KeyEstimate result;
+
+    double total = 0.0;
+
+    for (const auto& chord : chords)
+        if (chord.rootPitchClass >= 0)
+            total += chord.seconds;
+
+    if (total <= 0.0)
+        return result;
+
+    double bestScore = -1.0;
+    double bestFit = 0.0;
+
+    for (int tonic = 0; tonic < 12; ++tonic)
+    {
+        for (int minor = 0; minor < 2; ++minor)
+        {
+            double fit = 0.0;
+            double tonicTime = 0.0;
+            double dominantTime = 0.0;
+
+            for (const auto& chord : chords)
+            {
+                if (chord.rootPitchClass < 0 || ! belongs (chord, tonic, minor != 0))
+                    continue;
+
+                fit += chord.seconds;
+
+                const auto family = familyOf (chord.quality);
+
+                if (chord.rootPitchClass == tonic
+                    && family == (minor != 0 ? Family::minor : Family::major))
+                    tonicTime += chord.seconds;
+
+                // El quinto grado. En menor vale el mayor —el dominante de
+                // verdad— y también el menor, que en música popular es igual
+                // de frecuente.
+                if (chord.rootPitchClass == (tonic + 7) % 12
+                    && (family == Family::major || (minor != 0 && family == Family::minor)))
+                    dominantTime += chord.seconds;
+            }
+
+            // Encajar manda; la tónica y el dominante sólo desempatan.
+            //
+            // Hace falta desempatar porque dos tonalidades relativas comparten
+            // **todos** sus acordes: Do-Sol-Lam-Fa es igual de Do mayor que de
+            // La menor. Mirar sólo qué tónica ha sonado más es tirar una moneda
+            // cuando suenan lo mismo. Lo que resuelve el empate es lo que miraría
+            // un músico: si está el dominante. En Do mayor el Sol es el quinto
+            // grado y suena; en La menor el dominante sería Mi, y no aparece.
+            //
+            // La tónica pesa el doble que el dominante: una canción que se
+            // queda en Lam el doble de tiempo que en cualquier otro acorde está
+            // en La menor aunque tenga un Sol.
+            const double score = fit + 0.5 * tonicTime + 0.25 * dominantTime;
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestFit = fit;
+                result.tonicPitchClass = tonic;
+                result.minor = minor != 0;
+            }
+        }
+    }
+
+    result.confidence = bestFit / total;
+
+    // Si menos del 60 % del tiempo encaja en la tonalidad elegida, lo que suena
+    // no tiene una tonalidad clara, o el reconocedor se equivoca demasiado para
+    // deducirla. En los dos casos, mejor callar.
+    result.recognised = result.confidence >= 0.6;
+
+    if (result.recognised)
+        result.name = pitchClassName (result.tonicPitchClass)
+                    + (result.minor ? " menor" : " mayor");
+
+    return result;
+}
+
 void HarmonyListener::reset()
 {
     stable = AudioChordEstimate {};
     candidate = AudioChordEstimate {};
     agreement = 0;
     keyAccumulator = {};
+    chordFrames = {};
     history.clear();
 }
 
@@ -223,6 +387,13 @@ AudioChordEstimate HarmonyListener::observe (const Chroma& chroma,
     for (int i = 0; i < 12; ++i)
         keyAccumulator[static_cast<std::size_t> (i)] += chroma.bins[static_cast<std::size_t> (i)];
 
+    // Cada fotograma cuenta para el acorde que está sonando en ese momento, se
+    // haya reconocido éste o no: la tonalidad es cuánto tiempo pasa la canción
+    // en cada acorde, no cuántas veces se reconoció.
+    if (stable.recognised && stable.rootPitchClass >= 0)
+        chordFrames[static_cast<std::size_t> (stable.rootPitchClass * 16
+                                              + static_cast<int> (stable.quality))] += 1.0;
+
     if (! frame.recognised)
     {
         agreement = 0;
@@ -255,6 +426,34 @@ AudioChordEstimate HarmonyListener::observe (const Chroma& chroma,
 
 KeyEstimate HarmonyListener::key() const
 {
+    // En cuanto hay unos segundos de acordes reconocidos, la tonalidad sale de
+    // ellos. El perfil de notas queda sólo para el principio, cuando todavía no
+    // se ha reconocido nada con qué razonar.
+    std::vector<ChordDuration> durations;
+    double chordTotal = 0.0;
+
+    for (int root = 0; root < 12; ++root)
+        for (int quality = 0; quality < 16; ++quality)
+        {
+            const double frames = chordFrames[static_cast<std::size_t> (root * 16 + quality)];
+
+            if (frames > 0.0)
+            {
+                durations.push_back ({ root, static_cast<ChordQuality> (quality), frames });
+                chordTotal += frames;
+            }
+        }
+
+    // Treinta fotogramas son unos tres segundos: menos que eso son dos o tres
+    // acordes, y con dos acordes caben demasiadas tonalidades.
+    if (chordTotal >= 30.0)
+    {
+        const auto fromChords = keyFromChordDurations (durations);
+
+        if (fromChords.recognised)
+            return fromChords;
+    }
+
     KeyEstimate result;
 
     double total = 0.0;

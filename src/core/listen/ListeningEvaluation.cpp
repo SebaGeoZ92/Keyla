@@ -11,17 +11,13 @@ namespace keyla::core
 
 const TimedChord* chordAt (const std::vector<TimedChord>& timeline, double seconds)
 {
-    const TimedChord* current = nullptr;
+    // Búsqueda binaria: comparar trescientos ajustes sobre una canción entera
+    // hace miles de millones de consultas, y recorrerla entera cada vez las
+    // convertía en minutos.
+    const auto after = std::upper_bound (timeline.begin(), timeline.end(), seconds,
+                                         [] (double t, const TimedChord& c) { return t < c.seconds; });
 
-    for (const auto& chord : timeline)
-    {
-        if (chord.seconds > seconds)
-            break;
-
-        current = &chord;
-    }
-
-    return current;
+    return after == timeline.begin() ? nullptr : &*(after - 1);
 }
 
 std::vector<TimedChord> chordsFromNotes (const std::vector<TimedNote>& notes,
@@ -86,11 +82,11 @@ namespace
 
     Tally tallyAt (const std::vector<TimedChord>& heard,
                    const std::vector<TimedChord>& played,
-                   double duration, double lag, double step)
+                   double start, double duration, double lag, double step)
     {
         Tally tally;
 
-        for (double t = 0.0; t < duration; t += step)
+        for (double t = start; t < duration; t += step)
         {
             // Lo que Keyla oyó en `t` se compara con lo que tocaste en `t + lag`.
             const auto* h = chordAt (heard, t);
@@ -118,7 +114,8 @@ ListeningEvaluation evaluateListening (const std::vector<TimedChord>& heard,
                                        const std::vector<TimedChord>& played,
                                        double durationSeconds,
                                        double maxLagSeconds,
-                                       double stepSeconds)
+                                       double stepSeconds,
+                                       double startSeconds)
 {
     ListeningEvaluation result;
 
@@ -134,7 +131,7 @@ ListeningEvaluation evaluateListening (const std::vector<TimedChord>& heard,
     for (int i = -lagSteps; i <= lagSteps; ++i)
     {
         const double lag = i * stepSeconds;
-        const auto tally = tallyAt (heard, played, durationSeconds, lag, stepSeconds);
+        const auto tally = tallyAt (heard, played, startSeconds, durationSeconds, lag, stepSeconds);
 
         if (tally.compared <= 0.0)
             continue;
@@ -164,7 +161,7 @@ ListeningEvaluation evaluateListening (const std::vector<TimedChord>& heard,
 
     std::map<std::tuple<int, int, int, int>, double> confusionTime;
 
-    for (double t = 0.0; t < durationSeconds; t += stepSeconds)
+    for (double t = startSeconds; t < durationSeconds; t += stepSeconds)
     {
         const auto* h = chordAt (heard, t);
         const auto* p = chordAt (played, t + bestLag);

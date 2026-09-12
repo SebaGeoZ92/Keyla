@@ -217,6 +217,54 @@ línea de tiempo *oyó / sugirió / tocaste*.
 - Las grabaciones viven en `%APPDATA%\Keyla\sesiones` y **no van a git ni a
   `tests/`**: son canciones con derechos.
 
+**Primer ajuste con música real.** Sesión grabada tocando *Una y mil veces*
+(Los Forasteros) siguiendo Chordify: 4 min 32 s, cumbia con acordeón, voz y
+bajo. La grabación tiene errores y trozos tocados por diversión, y **sirve
+igual**: esos errores bajan la nota de todos los ajustes por igual, así que la
+comparación entre ajustes sigue siendo válida aunque el porcentaje absoluto no
+lo sea.
+
+| | Fundamental | Tipo | Tonalidad |
+|---|---|---|---|
+| Antes | 42 % | 33 % | La mayor (mal) |
+| **Ahora** | **54 %** | **53 %** | **Re mayor** |
+
+Lo que se aprendió, y que conviene no desaprender:
+
+- **Castigar las lecturas raras es lo que más aporta.** Los 25 mejores de 288
+  ajustes castigaban sus/dim/aug/6; los 5 peores no castigaban nada. La voz y
+  el acordeón meten notas de melodía que encajan en plantillas de cuatro notas.
+  Van en dos niveles (`complexQualityPenalty` 0,30 y `seventhQualityPenalty`
+  0,05) por lo que viene a continuación.
+- **Se descartó el ajuste que mejor puntuaba en la canción (57 %).** Castigaba
+  las séptimas con 0,10, y en una séptima limpia la cuarta nota sólo le saca
+  ~0,11 a la tríada: el test de 48 acordes limpios bajaba del 100 % al 75 % en
+  tipo. En esa cumbia no se tocó ninguna séptima, así que castigarlas sólo podía
+  ayudar *ahí*. Eso es aprenderse una canción, no mejorar. **El test de acordes
+  limpios es el guardián contra esto** y se tiene que correr en cada ajuste.
+- **La tonalidad sale de los acordes, no de las notas.** Sumar notas y comparar
+  con perfiles de Krumhansl daba La mayor en una canción en Re: el quinto grado
+  suena casi la mitad del tiempo en cumbia y arrastra el resultado. Ahora se
+  mira en qué tonalidad encajan los acordes reconocidos. Las relativas —que
+  comparten todos sus acordes— se desempatan por tónica y por **dominante**:
+  Do-Sol-Lam-Fa es Do mayor porque el Sol está y el Mi no.
+- Agudizar menos (1,5 en vez de 2) va mejor en mezclas: con 2 se hundía la
+  tercera, que en una mezcla suele sonar más floja que la fundamental.
+
+Lo que sigue sin resolver: las confusiones entre acordes que comparten dos
+notas (D↔Bm, A↔Bm, Em↔Bm). Ahí ya no ayudan las perillas; hace falta un bajo
+mejor detectado o un suavizado temporal que conozca las transiciones probables
+en una tonalidad.
+
+**`keyla_session`** (src/tools/session_tool/): analiza y ajusta sesiones grabadas
+desde consola. Existe aparte porque enlazar `Keyla.exe` exige cerrarla, y el
+análisis no tiene nada que ver con la ventana. `keyla_session tune` prueba
+cientos de ajustes en segundos porque el análisis de Q constante —la parte
+cara— se calcula una vez (`computeChromaFrames`) y sólo se repite la decisión.
+**Antes de fiarse de un informe, comprobar que el ejecutable es más nuevo que
+el código:** en la primera tirada salió un 57 % de un binario que aún tenía el
+ajuste anterior.
+
 Lo que falta para cerrar de verdad:
 
 - **El calibrador de loopback en la app.** El offset perceptual (invariante 7,

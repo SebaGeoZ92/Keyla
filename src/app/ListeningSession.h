@@ -53,4 +53,16 @@ bool readListeningSession (const juce::File& folder, ListeningSessionData& data,
     tengas que volver a tocarla. */
 juce::String analyseListeningSession (const juce::File& folder, juce::String& error);
 
+/** Prueba muchos ajustes del reconocimiento sobre la misma grabación y escribe
+    `ajuste.txt` con los mejores.
+
+    Lo que se compara es **cuánto sube o baja el acuerdo** entre ajustes, no el
+    acuerdo en sí: si en la grabación hay errores tuyos o trozos tocados por
+    diversión, bajan la nota de todos los ajustes por igual y siguen dejando ver
+    cuál es mejor. `fromSeconds`/`toSeconds` limitan la comparación al tramo en
+    que tocaste en serio; negativo = sin límite. */
+juce::String tuneListeningSession (const juce::File& folder,
+                                   double fromSeconds, double toSeconds,
+                                   juce::String& error);
+
 } // namespace keyla::app

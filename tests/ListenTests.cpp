@@ -576,3 +576,58 @@ TEST_CASE ("El legato no fabrica acordes que no tocaste", "[listen][evaluation]"
     CHECK (chords[1].rootPitchClass == 9);
     CHECK (chords[1].quality == ChordQuality::minor);
 }
+
+TEST_CASE ("La tonalidad sale de los acordes, no del quinto grado", "[listen][key]")
+{
+    // El caso real que motivo esto: una cumbia en Re mayor donde el La suena
+    // casi tanto como el Re. Sumando notas salia La mayor.
+    const std::vector<ChordDuration> cumbia {
+        { 2, ChordQuality::major, 60.0 },   // D
+        { 9, ChordQuality::major, 55.0 },   // A, casi tanto como la tonica
+        { 11, ChordQuality::minor, 30.0 },  // Bm
+        { 4, ChordQuality::minor, 25.0 },   // Em
+        { 7, ChordQuality::major, 20.0 }    // G: no pertenece a La mayor
+    };
+
+    const auto key = keyFromChordDurations (cumbia);
+
+    REQUIRE (key.recognised);
+    CHECK (key.tonicPitchClass == 2);
+    CHECK_FALSE (key.minor);
+    CHECK (key.confidence > 0.99);
+}
+
+TEST_CASE ("Las relativas se separan por su tonica", "[listen][key]")
+{
+    // Lam, Fa, Do, Sol: los mismos acordes valen para La menor y Do mayor.
+    const std::vector<ChordDuration> minorSong {
+        { 9, ChordQuality::minor, 40.0 },   // Am, el que mas
+        { 5, ChordQuality::major, 20.0 },
+        { 0, ChordQuality::major, 20.0 },
+        { 7, ChordQuality::major, 20.0 }
+    };
+
+    const auto key = keyFromChordDurations (minorSong);
+
+    REQUIRE (key.recognised);
+    CHECK (key.tonicPitchClass == 9);
+    CHECK (key.minor);
+}
+
+TEST_CASE ("Sin tonalidad clara, se calla", "[listen][key]")
+{
+    // Do, Dom, Do#m, Rem, Re#m, Fa#m. Buscado con una replica del algoritmo
+    // y no a ojo: la primera version de este test usaba mayores cromaticos y
+    // Fa menor explicaba el 60 %, porque se me olvidaron las tonalidades
+    // menores. Con este conjunto ninguna pasa del 33 %.
+    const std::vector<ChordDuration> chaos {
+        { 0, ChordQuality::major, 10.0 },
+        { 0, ChordQuality::minor, 10.0 },
+        { 1, ChordQuality::minor, 10.0 },
+        { 2, ChordQuality::minor, 10.0 },
+        { 3, ChordQuality::minor, 10.0 },
+        { 6, ChordQuality::minor, 10.0 }
+    };
+
+    CHECK_FALSE (keyFromChordDurations (chaos).recognised);
+}

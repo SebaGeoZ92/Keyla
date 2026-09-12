@@ -1,6 +1,7 @@
 #include "ListeningSession.h"
 
 #include <core/listen/Accompaniment.h>
+#include <core/listen/ChordTimeline.h>
 #include <core/listen/Chromagram.h>
 #include <core/listen/HarmonyFromAudio.h>
 #include <core/music/Pitch.h>
@@ -212,39 +213,16 @@ juce::String analyseListeningSession (const juce::File& folder, juce::String& er
     const double duration = data.durationSeconds();
 
     // ── Lo que oyó Keyla, reanalizado ───────────────────────────────────────
-    core::ChromaAnalyser analyser;
-    analyser.prepare (data.sampleRate);
+    std::vector<float> mono (data.audio.size());
 
-    core::HarmonyListener listener;
-    std::vector<core::TimedChord> heard;
+    for (std::size_t i = 0; i < mono.size(); ++i)
+        mono[i] = data.audio[i] / 32768.0f;
 
-    constexpr int block = 4096;
-    std::vector<float> scratch (block);
-    std::size_t pushed = 0;
+    int lowestPitch = 0;
+    const auto frames = core::computeChromaFrames (mono, data.sampleRate, {}, &lowestPitch);
 
-    while (pushed < data.audio.size())
-    {
-        const auto count = std::min<std::size_t> (block, data.audio.size() - pushed);
-
-        for (std::size_t i = 0; i < count; ++i)
-            scratch[i] = data.audio[pushed + i] / 32768.0f;
-
-        analyser.push (scratch.data(), static_cast<int> (count));
-        pushed += count;
-
-        core::Chroma frame;
-
-        while (analyser.popFrame (frame))
-        {
-            const auto current = listener.observe (frame, analyser.pitchProfile(), analyser.lowestPitch());
-
-            if (current.recognised
-                && (heard.empty()
-                    || heard.back().rootPitchClass != current.rootPitchClass
-                    || heard.back().quality != current.quality))
-                heard.push_back ({ pushed / data.sampleRate, current.rootPitchClass, current.quality });
-        }
-    }
+    core::KeyEstimate key;
+    const auto heard = core::chordsFromFrames (frames, lowestPitch, core::HarmonyListener::Options {}, &key);
 
     // ── Lo que tocaste ──────────────────────────────────────────────────────
     const auto played = core::chordsFromNotes (data.notes);
@@ -256,8 +234,6 @@ juce::String analyseListeningSession (const juce::File& folder, juce::String& er
     report.add ("Keyla - sesion de escucha");
     report.add ("Carpeta: " + folder.getFullPathName());
     report.add ("Duracion: " + clock (duration) + "   salida: " + data.deviceName);
-
-    const auto key = listener.key();
 
     if (key.recognised)
         report.add ("Tonalidad que oyo Keyla: " + key.name);
@@ -288,6 +264,26 @@ juce::String analyseListeningSession (const juce::File& folder, juce::String& er
 
         if (evaluation.comparedSeconds < 20.0)
             report.add ("  Ojo: menos de 20 s comparados. Los porcentajes son orientativos.");
+
+        report.add ({});
+        report.add ("ACUERDO POR TRAMOS DE 30 s (donde baja mucho, o fallo Keyla o no seguias la cancion)");
+
+        for (double from = 0.0; from < duration; from += 30.0)
+        {
+            const auto section = core::evaluateListening (heard, played, std::min (duration, from + 30.0),
+                                                          0.0, 0.05, from);
+
+            juce::String bar;
+
+            if (section.valid)
+                bar = juce::String::repeatedString ("#", juce::roundToInt (section.rootAgreement * 20.0))
+                          .paddedRight ('.', 20)
+                    + "  " + percent (section.rootAgreement);
+            else
+                bar = "(sin acordes tuyos)";
+
+            report.add ("  " + clock (from).paddedRight (' ', 8) + bar);
+        }
 
         report.add ({});
         report.add ("DONDE MAS DISCREPASTEIS");
@@ -330,6 +326,116 @@ juce::String analyseListeningSession (const juce::File& folder, juce::String& er
     const auto text = report.joinIntoString ("\n") + "\n";
     folder.getChildFile ("informe.txt").replaceWithText (text);
 
+    return text;
+}
+
+juce::String tuneListeningSession (const juce::File& folder,
+                                   double fromSeconds, double toSeconds,
+                                   juce::String& error)
+{
+    ListeningSessionData data;
+
+    if (! readListeningSession (folder, data, error))
+        return {};
+
+    const double duration = data.durationSeconds();
+    const double start = fromSeconds >= 0.0 ? fromSeconds : 0.0;
+    const double end = toSeconds > start ? std::min (duration, toSeconds) : duration;
+
+    std::vector<float> mono (data.audio.size());
+
+    for (std::size_t i = 0; i < mono.size(); ++i)
+        mono[i] = data.audio[i] / 32768.0f;
+
+    int lowestPitch = 0;
+    const auto frames = core::computeChromaFrames (mono, data.sampleRate, {}, &lowestPitch);
+    const auto played = core::chordsFromNotes (data.notes);
+
+    struct Trial
+    {
+        core::HarmonyListener::Options options;
+        core::ListeningEvaluation result;
+        int changes { 0 };
+    };
+
+    std::vector<Trial> trials;
+
+    for (double sharpening : { 1.0, 1.5, 2.0 })
+     for (double penalty : { 0.0, 0.10, 0.20, 0.30, 0.50 })
+      for (double seventh : { 0.0, 0.05, 0.10 })
+       for (double bass : { 0.03, 0.08 })
+        for (int agree : { 2, 3, 4 })
+        {
+            core::HarmonyListener::Options options;
+            options.sharpening = sharpening;
+            options.complexQualityPenalty = penalty;
+            options.seventhQualityPenalty = seventh;
+            options.bassIsRootBonus = bass;
+            options.framesToAgree = agree;
+
+            const auto heard = core::chordsFromFrames (frames, lowestPitch, options);
+
+            Trial trial;
+            trial.options = options;
+            trial.result = core::evaluateListening (heard, played, end, 1.0, 0.05, start);
+            trial.changes = static_cast<int> (heard.size());
+            trials.push_back (trial);
+        }
+
+    std::sort (trials.begin(), trials.end(), [] (const Trial& a, const Trial& b)
+    {
+        return a.result.rootAgreement + a.result.fullAgreement
+             > b.result.rootAgreement + b.result.fullAgreement;
+    });
+
+    const auto describe = [] (const Trial& t)
+    {
+        return "agudizar " + juce::String (t.options.sharpening, 1)
+             + "  raros " + juce::String (t.options.complexQualityPenalty, 2)
+             + "  sept " + juce::String (t.options.seventhQualityPenalty, 2)
+             + "  bajo " + juce::String (t.options.bassIsRootBonus, 2)
+             + "  fotogr " + juce::String (t.options.framesToAgree)
+             + "   ->  fund " + percent (t.result.rootAgreement)
+             + "  tipo " + percent (t.result.fullAgreement)
+             + "  cambios " + juce::String (t.changes);
+    };
+
+    juce::StringArray report;
+    report.add ("Keyla - ajuste del reconocimiento sobre una grabacion");
+    report.add ("Tramo comparado: " + clock (start) + " a " + clock (end)
+                + "   ajustes probados: " + juce::String (static_cast<int> (trials.size())));
+    report.add ({});
+
+    // El actual, para comparar contra algo real y no contra la nada.
+    core::HarmonyListener::Options current;
+    const auto currentHeard = core::chordsFromFrames (frames, lowestPitch, current);
+    Trial baseline;
+    baseline.options = current;
+    baseline.result = core::evaluateListening (currentHeard, played, end, 1.0, 0.05, start);
+    baseline.changes = static_cast<int> (currentHeard.size());
+
+    report.add ("AJUSTE ACTUAL");
+    report.add ("  " + describe (baseline));
+    report.add ({});
+    report.add ("LOS 25 MEJORES");
+
+    for (std::size_t i = 0; i < std::min<std::size_t> (25, trials.size()); ++i)
+        report.add ("  " + describe (trials[i]));
+
+    report.add ({});
+    report.add ("LOS 5 PEORES");
+
+    for (std::size_t i = trials.size() > 5 ? trials.size() - 5 : 0; i < trials.size(); ++i)
+        report.add ("  " + describe (trials[i]));
+
+    report.add ({});
+    report.add ("TODOS");
+
+    for (const auto& trial : trials)
+        report.add ("  " + describe (trial));
+
+    const auto text = report.joinIntoString ("\n") + "\n";
+    folder.getChildFile ("ajuste.txt").replaceWithText (text);
     return text;
 }
 

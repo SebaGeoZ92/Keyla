@@ -51,6 +51,27 @@ struct KeyEstimate
     juce::String name;          // "Sol mayor", "La menor"
 };
 
+/** Cuánto tiempo sonó un acorde. */
+struct ChordDuration
+{
+    int rootPitchClass { -1 };
+    ChordQuality quality { ChordQuality::unknown };
+    double seconds { 0.0 };
+};
+
+/** La tonalidad a partir de **los acordes**, no de las notas sueltas.
+
+    Sumar todas las notas oídas y compararlas con un perfil de tonalidad es el
+    método clásico, y en música popular tiene una trampa: el acorde del quinto
+    grado suena muchísimo —en cumbia, casi la mitad del tiempo— y arrastra el
+    resultado hacia él. Una canción en Re mayor salía en La mayor.
+
+    Con los acordes ya reconocidos se pregunta otra cosa, más musical: **en qué
+    tonalidad encajan estos acordes**. D, A, Bm, Em y G sólo son todos de la
+    misma familia en Re mayor (o en su relativa, Si menor). El empate entre
+    relativas lo decide cuál de las dos tónicas ha sonado más. */
+KeyEstimate keyFromChordDurations (const std::vector<ChordDuration>& chords);
+
 /** Reconocimiento de acordes sobre audio.
 
     Dos decisiones que separan esto de "probar plantillas y quedarse con la
@@ -73,7 +94,7 @@ public:
     struct Options
     {
         /** Exponente con el que se agudiza el cromagrama. 1 = tal cual. */
-        double sharpening { 2.0 };
+        double sharpening { 1.5 };
 
         /** Por debajo de esto se dice "no lo sé" en vez de adivinar. */
         double minConfidence { 0.60 };
@@ -91,7 +112,22 @@ public:
             único que distingue esos dos acordes es cuál de las notas está
             abajo. Pequeño a propósito: sólo debe decidir empates, nunca
             imponerse a una lectura claramente mejor. */
-        double bassIsRootBonus { 0.03 };
+        double bassIsRootBonus { 0.08 };
+
+        /** Cuánto le cuesta a una lectura que no sea mayor o menor.
+
+            Una séptima mayor, una sus4 o un disminuido necesitan **más
+            evidencia** que una tríada, porque en música popular son mucho más
+            raros — y porque en una mezcla la melodía siempre está añadiendo
+            notas sueltas que encajan en una plantilla de cuatro. Sin esto, la
+            voz cantando un Fa# sobre un Sol convierte el Sol en Solmaj7. */
+        double complexQualityPenalty { 0.30 };
+
+        /** Lo mismo para las séptimas (dominante, menor y mayor), aparte y
+            normalmente más suave. No son raras: en boleros y baladas están por
+            todas partes. Pero un castigo alto las borraría del todo, porque en
+            una séptima limpia la cuarta nota sólo le saca 0,13 a la tríada. */
+        double seventhQualityPenalty { 0.05 };
 
         /** Fotogramas seguidos que deben coincidir para cambiar el cifrado. */
         int framesToAgree { 3 };
@@ -132,6 +168,10 @@ private:
     int agreement { 0 };
 
     std::array<double, 12> keyAccumulator {};
+
+    /** Fotogramas en que cada acorde fue el estable, por fundamental y
+        calidad. Es de donde sale la tonalidad en cuanto hay acordes. */
+    std::array<double, 12 * 16> chordFrames {};
     std::vector<AudioChordEstimate> history;
 };
 

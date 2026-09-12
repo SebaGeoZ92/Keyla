@@ -57,6 +57,29 @@ public:
             return;
         }
 
+        if (commandLine.contains ("--tune-session"))
+        {
+            auto rest = commandLine.fromFirstOccurrenceOf ("--tune-session", false, false).trim();
+            const auto path = rest.upToFirstOccurrenceOf (" --", false, false).trim().unquoted();
+
+            const auto number = [&commandLine] (const char* flag)
+            {
+                return commandLine.contains (flag)
+                     ? commandLine.fromFirstOccurrenceOf (flag, false, false).trim()
+                                  .upToFirstOccurrenceOf (" ", false, false).getDoubleValue()
+                     : -1.0;
+            };
+
+            juce::String error;
+            tuneListeningSession (juce::File (path), number ("--from"), number ("--to"), error);
+
+            if (error.isNotEmpty())
+                juce::File (path).getChildFile ("ajuste.txt").replaceWithText ("ERROR: " + error);
+
+            quit();
+            return;
+        }
+
         if (commandLine.contains ("--listen-test"))
         {
             runListenTest (commandLine);
