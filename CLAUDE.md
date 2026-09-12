@@ -173,18 +173,26 @@ progresión entera deduciendo la tonalidad.
   desempatar por el bajo, el reconocedor se quedaba mudo en un acorde de cada
   ocho. Con la regla puesta, el acierto pasó del 89,6 % al 100 %.
 
-Lo que falta para que Keyla escuche de verdad la tarjeta de sonido:
+**El ciclo entero, cerrado y verificado sobre el equipo real.** Keyla escucha
+una salida de Windows, saca el acorde y enseña dónde ponerlo en la mano
+encendiendo las teclas de la pantalla.
 
-- **La captura.** JUCE **no trae loopback de WASAPI** —cero apariciones en todo
-  `juce_audio_devices`; sólo `shared`, `exclusive` y `sharedLowLatency`—, así que
-  hay que escribirlo con COM en `src/app/`. Y hay un choque de fondo: el
-  loopback de Windows no funciona sobre un endpoint abierto en **exclusivo**,
-  que es como Keyla suena hoy. Escuchar y sonar en exclusivo por la misma
-  tarjeta son incompatibles; habrá que caer a compartido mientras se escucha, y
-  en este equipo eso sube el buffer mínimo de 144 a 480.
-- **Las sugerencias.** La maquinaria ya está: `ProgressionGenerator` sabe de
-  enlace de voces e inversiones, y el escuchador ya da tonalidad y grado. Falta
-  unirlos y exponer las funciones de voicing, que hoy son privadas del .cpp.
+- `LoopbackCapture` (src/app/): WASAPI en modo compartido con
+  `AUDCLNT_STREAMFLAGS_LOOPBACK`, escrito con COM porque **JUCE no lo trae**
+  —cero apariciones de *loopback* en todo `juce_audio_devices`—. Toda la
+  apertura ocurre en el hilo de captura: los objetos de WASAPI y COM se llevan
+  mal con cruzar de hilo.
+- El loopback **no funciona sobre un endpoint abierto en exclusivo**. Escuchar
+  y sonar en exclusivo por la misma salida son incompatibles, y se dice con
+  esas palabras cuando pasa.
+- `AccompanimentCoach` (core/listen/) reutiliza `voiceChordNear` y
+  `bassNoteFor`, que se sacaron a público en `ProgressionGenerator`. Medido
+  sobre Do-Sol-Lam-Fa: **12 semitonos de recorrido de mano enlazando voces
+  contra 52 en estado fundamental**.
+- `--listen-test` verifica la cadena entera sin ventana y sin humano. Tirada
+  real contra un WAV de prueba: `C G Am F`, tonalidad Do mayor, y las
+  colocaciones salen con enlace de voces de libro (C4-E4-G4 → B3-D4-G4 →
+  C4-E4-A4 → C4-F4-A4).
 
 Lo que falta para cerrar de verdad:
 
