@@ -39,6 +39,7 @@ add_subdirectory(src/core)
 add_subdirectory(src/app)
 add_subdirectory(src/tools/audio_probe)
 add_subdirectory(src/tools/session_tool)
+add_subdirectory(src/tools/ui_snapshot)
 
 if (KEYLA_BUILD_TESTS)
     enable_testing()
