@@ -268,15 +268,21 @@ AudioChordEstimate HarmonyListener::estimate (const Chroma& chroma,
     if (! result.recognised)
         return result;
 
-    result.symbol = pitchClassName (bestRoot) + ChordRecognizer::qualitySymbol (bestQuality);
+    // Cifrado en letras, con la ortografía con que se escribe normalmente: Bb
+    // y no A#. Es lo que se lee en Chordify y en cualquier cancionero.
+    const auto minorish = bestQuality == ChordQuality::minor || bestQuality == ChordQuality::minor7
+                       || bestQuality == ChordQuality::minor6 || bestQuality == ChordQuality::diminished;
+    const auto accidental = conventionalAccidental (bestRoot, minorish);
+
+    result.symbol = pitchClassName (bestRoot, accidental) + ChordRecognizer::qualitySymbol (bestQuality);
 
     // El bajo manda, igual que en el reconocedor de MIDI: si la nota más grave
     // no es la fundamental, se cifra con barra. Es la misma regla y tiene que
     // serlo, porque el alumno ve los dos cifrados en la misma ventana.
     if (bassPitchClass >= 0 && bassPitchClass != bestRoot)
-        result.symbol += "/" + pitchClassName (bassPitchClass);
+        result.symbol += "/" + pitchClassName (bassPitchClass, accidental);
 
-    result.description = pitchClassName (bestRoot) + " "
+    result.description = spanishPitchClassName (bestRoot, accidental) + " "
                        + ChordRecognizer::qualityDescription (bestQuality);
 
     return result;
@@ -430,7 +436,8 @@ KeyEstimate keyFromChordDurations (const std::vector<ChordDuration>& chords)
     result.recognised = result.confidence >= 0.6;
 
     if (result.recognised)
-        result.name = pitchClassName (result.tonicPitchClass)
+        result.name = spanishPitchClassName (result.tonicPitchClass,
+                                             conventionalAccidental (result.tonicPitchClass, result.minor))
                     + (result.minor ? " menor" : " mayor");
 
     return result;
@@ -620,7 +627,8 @@ KeyEstimate HarmonyListener::key() const
     result.recognised = best >= 0.5;
 
     if (result.recognised)
-        result.name = pitchClassName (result.tonicPitchClass)
+        result.name = spanishPitchClassName (result.tonicPitchClass,
+                                             conventionalAccidental (result.tonicPitchClass, result.minor))
                     + (result.minor ? " menor" : " mayor");
 
     return result;

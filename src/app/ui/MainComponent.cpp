@@ -45,6 +45,8 @@ namespace
 MainComponent::MainComponent (bool isUnattended)
     : unattended (isUnattended)
 {
+    setLookAndFeel (&lookAndFeel);
+
     prefs = Settings::load();
 
     instrument = core::createInstrument (prefs.instrument);
@@ -57,17 +59,17 @@ MainComponent::MainComponent (bool isUnattended)
     audioHost.setControllerNumber (ControlTarget::reverb, prefs.reverbController);
 
     // ── Controles ───────────────────────────────────────────────────────────
-    addAndMakeVisible (audioDeviceBox);
-    addAndMakeVisible (midiDeviceBox);
-    addAndMakeVisible (bufferSizeBox);
-    addAndMakeVisible (exclusiveToggle);
+    settingsPanel.addAndMakeVisible (audioDeviceBox);
+    settingsPanel.addAndMakeVisible (midiDeviceBox);
+    settingsPanel.addAndMakeVisible (bufferSizeBox);
+    settingsPanel.addAndMakeVisible (exclusiveToggle);
     addAndMakeVisible (instrumentBox);
     addAndMakeVisible (reverbSlider);
     addAndMakeVisible (reverbLabel);
     addAndMakeVisible (volumeSlider);
     addAndMakeVisible (volumeLabel);
-    addAndMakeVisible (learnButton);
-    addAndMakeVisible (learnTargetBox);
+    settingsPanel.addAndMakeVisible (learnButton);
+    settingsPanel.addAndMakeVisible (learnTargetBox);
     addAndMakeVisible (tremoloSlider);
     addAndMakeVisible (tremoloLabel);
     addAndMakeVisible (exerciseView);
@@ -160,11 +162,41 @@ MainComponent::MainComponent (bool isUnattended)
     addAndMakeVisible (statusLabel);
     addAndMakeVisible (messageLabel);
     addAndMakeVisible (panicButton);
-    addAndMakeVisible (startupToggle);
-    addAndMakeVisible (listenToggle);
-    addAndMakeVisible (listenDeviceBox);
-    addAndMakeVisible (recordListenButton);
+    settingsPanel.addAndMakeVisible (startupToggle);
+    settingsPanel.addAndMakeVisible (listenDeviceBox);
     addAndMakeVisible (listeningView);
+
+    // Los controles de la escucha van **encima** de su tarjeta: se añaden
+    // después para quedar delante, o la tarjeta los taparía al pintarse.
+    addAndMakeVisible (listenToggle);
+    addAndMakeVisible (recordListenButton);
+
+    addAndMakeVisible (settingsButton);
+    settingsPanel.addAndMakeVisible (closeSettingsButton);
+    settingsPanel.addAndMakeVisible (technicalLabel);
+
+    // El panel, el último de todos: tiene que quedar delante de todo.
+    addChildComponent (settingsPanel);
+
+    settingsButton.onClick = [this] { showSettings (! settingsPanel.isVisible()); };
+    closeSettingsButton.onClick = [this] { showSettings (false); };
+    settingsPanel.onDismiss = [this] { showSettings (false); };
+    settingsPanel.onLayout = [this] (juce::Rectangle<int> card) { layoutSettings (card); };
+
+    settingsPanel.onPaintCard = [this] (juce::Graphics& g, juce::Rectangle<int>)
+    {
+        for (const auto& item : settingsTexts)
+        {
+            g.setColour (item.isTitle ? theme::text : item.isHeader ? theme::textDim : theme::textSecondary);
+            g.setFont (juce::FontOptions (item.isTitle ? 22.0f : item.isHeader ? 11.5f : 14.0f,
+                                          item.isTitle || item.isHeader ? juce::Font::bold : juce::Font::plain));
+            g.drawText (item.text, item.area, juce::Justification::centredLeft, true);
+        }
+    };
+
+    technicalLabel.setFont (juce::FontOptions (12.5f));
+    technicalLabel.setColour (juce::Label::textColourId, theme::textDim);
+    technicalLabel.setJustificationType (juce::Justification::topLeft);
 
     exclusiveToggle.setToggleState (prefs.exclusive, juce::dontSendNotification);
     exclusiveToggle.onClick = [this]
@@ -218,7 +250,7 @@ MainComponent::MainComponent (bool isUnattended)
     // ── Constructor de ejercicios ───────────────────────────────────────────
     kindBox.addItem ("Escala", 1);
     kindBox.addItem ("Arpegio", 2);
-    kindBox.addItem ("Progresion", 3);
+    kindBox.addItem ("Progresión"_u8, 3);
     kindBox.addItem ("Importado", 4);
     kindBox.setSelectedId (1, juce::dontSendNotification);
     kindBox.onChange = [this] { rebuildVariantBox(); };
@@ -240,6 +272,7 @@ MainComponent::MainComponent (bool isUnattended)
     modeBox.addItem ("Modo tempo", 2);
     modeBox.setSelectedId (1, juce::dontSendNotification);
 
+    metronomeToggle.setButtonText ("Metrónomo"_u8);
     metronomeToggle.onClick = [this]
     {
         audioHost.setMetronomeEnabled (metronomeToggle.getToggleState());
@@ -248,6 +281,7 @@ MainComponent::MainComponent (bool isUnattended)
     tempoSlider.setRange (40.0, 200.0, 1.0);
     tempoSlider.setValue (prefs.tempoBpm, juce::dontSendNotification);
     tempoSlider.setTextValueSuffix (" BPM");
+    tempoSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 66, 24);
     tempoSlider.onValueChange = [this]
     {
         prefs.tempoBpm = tempoSlider.getValue();
@@ -265,14 +299,17 @@ MainComponent::MainComponent (bool isUnattended)
     };
 
     importButton.onClick = [this] { importMidiExercise(); };
+    theme::makePrimary (exerciseButton);
 
     keyboardView.setRange (keyboardLowest, keyboardHighest);
     keyboardView.onNoteOn = [this] (int note, int velocity) { sendNote (note, velocity, true); };
     keyboardView.onNoteOff = [this] (int note) { sendNote (note, 0, false); };
 
-    statusLabel.setFont (juce::FontOptions (13.0f));
-    statusLabel.setColour (juce::Label::textColourId, juce::Colour { 0xff9aa2ad });
-    messageLabel.setFont (juce::FontOptions (13.0f));
+    statusLabel.setFont (juce::FontOptions (13.5f));
+    statusLabel.setColour (juce::Label::textColourId, theme::textSecondary);
+    statusLabel.setJustificationType (juce::Justification::centredRight);
+    messageLabel.setFont (juce::FontOptions (13.5f));
+    messageLabel.setJustificationType (juce::Justification::centredLeft);
 
     // ── Arranque ────────────────────────────────────────────────────────────
     //
@@ -287,12 +324,13 @@ MainComponent::MainComponent (bool isUnattended)
     else
         openSelectedAudioDevice();
 
-    setSize (1100, 692);
+    setSize (1180, 720);
     startTimerHz (60);
 }
 
 MainComponent::~MainComponent()
 {
+    setLookAndFeel (nullptr);
     stopTimer();
     saveSettings();
     midiHost.useDevice ({});
@@ -454,6 +492,11 @@ void MainComponent::rebuildVariantBox()
     const bool generated = kind != 4;
     tonicBox.setEnabled (generated);
     handBox.setEnabled (generated);
+
+    // Con un MIDI importado no hay octavas ni enlace de voces que elegir, y sí
+    // hace falta poder abrir el fichero: el botón ocupa el sitio de la opción.
+    optionBox.setVisible (generated);
+    importButton.setVisible (! generated);
 
     if (kind == 1)
     {
@@ -1044,147 +1087,327 @@ void MainComponent::timerCallback()
         prefs.reverbMix = snapshot.reverbMix;
     }
 
+    const auto now = juce::Time::getMillisecondCounter();
+
     if (pendingMessage.isNotEmpty())
     {
         messageLabel.setText (pendingMessage, juce::dontSendNotification);
         messageLabel.setColour (juce::Label::textColourId,
-                                messageIsError ? juce::Colour { 0xffe4785e }
-                                               : juce::Colour { 0xff7fb069 });
+                                messageIsError ? theme::error : theme::accent);
         pendingMessage.clear();
+        messageShownAtMs = now;
+        messageIsShowing = true;
     }
+
+    // Los errores se quedan más rato que los avisos normales: son los que hay
+    // que leer.
+    const auto lifetime = messageIsError ? 15000u : 8000u;
+
+    if (messageIsShowing && now - messageShownAtMs > lifetime)
+    {
+        messageLabel.setText ({}, juce::dontSendNotification);
+        messageIsShowing = false;
+    }
+
+    updateStatusBar (snapshot);
+}
+
+void MainComponent::updateStatusBar (const EngineSnapshot& snapshot)
+{
+    // ── La barra de abajo, en castellano y sólo lo que importa ──────────────
+    //
+    // Antes enseñaba frecuencia, buffer, jitter y dropouts todo el rato. Son
+    // números para diagnosticar, no para tocar: van a los ajustes. Aquí queda
+    // lo que se puede entender y usar sin saber de audio, y los avisos cuando
+    // algo va mal.
+    const auto separator = "   ·   "_u8;
+    juce::StringArray parts;
+    bool warning = false;
 
     if (! audioHost.isRunning())
     {
-        statusLabel.setText (unattended ? "esperando al teclado  ·  la tarjeta de sonido esta libre"_u8
-                                        : juce::String ("sin audio"),
-                             juce::dontSendNotification);
+        parts.add (unattended ? "Esperando a que enciendas el teclado. La tarjeta de sonido está libre."_u8
+                              : "Sin sonido: revisa la salida en Ajustes."_u8);
+        warning = ! unattended;
+    }
+    else
+    {
+        if (snapshot.dropouts > 0)
+        {
+            parts.add ("Se han oído "_u8 + juce::String (snapshot.dropouts)
+                       + (snapshot.dropouts == 1 ? " corte de sonido" : " cortes de sonido"));
+            warning = true;
+        }
+
+        if (snapshot.midiRejected > 0)
+        {
+            parts.add ("Se han perdido notas del teclado"_u8);
+            warning = true;
+        }
+    }
+
+    parts.add (midiHost.isConnected() ? "Teclado " + midiHost.wantedDeviceName()
+                                      : juce::String ("Sin teclado conectado"));
+
+    if (snapshot.sustainValue >= core::sustainPedalThreshold)
+        parts.add ("Pedal");
+
+    statusLabel.setText (parts.joinIntoString (separator), juce::dontSendNotification);
+    statusLabel.setColour (juce::Label::textColourId, warning ? theme::warning : theme::textSecondary);
+
+    // ── Los números técnicos, para los ajustes ──────────────────────────────
+    if (! settingsPanel.isVisible())
+        return;
+
+    if (! audioHost.isRunning())
+    {
+        technicalLabel.setText ("Sin audio."_u8, juce::dontSendNotification);
         return;
     }
 
-    const auto separator = "   ·   "_u8;
+    juce::String technical;
+    technical << juce::String (snapshot.sampleRate / 1000.0, 1) << " kHz" << separator
+              << "buffer " << snapshot.bufferSize
+              << " (" << juce::String (1000.0 * snapshot.bufferSize / snapshot.sampleRate, 2) << " ms)"
+              << separator << "latencia de salida " << juce::String (snapshot.outputLatencyMs, 1) << " ms"
+              << separator << "dropouts " << juce::String (snapshot.dropouts) << "\n"
+              << "CPU " << juce::String (snapshot.cpuMean * 100.0, 1) << " %"
+              << separator << "jitter " << juce::String (snapshot.callbackJitterMs, 2) << " ms"
+              << separator << "voces " << juce::String (snapshot.activeVoices);
 
-    juce::String status;
-    status << juce::String (snapshot.sampleRate / 1000.0, 1) << " kHz"
-           << separator << "buffer " << snapshot.bufferSize
-           << " (" << juce::String (1000.0 * snapshot.bufferSize / snapshot.sampleRate, 2) << " ms)"
-           << separator << "latencia de salida " << juce::String (snapshot.outputLatencyMs, 1) << " ms"
-           << separator << "dropouts " << juce::String (snapshot.dropouts)
-           << separator << "CPU " << juce::String (snapshot.cpuMean * 100.0, 1) << " %"
-           << separator << "jitter " << juce::String (snapshot.callbackJitterMs, 2) << " ms"
-           << separator << "voces " << juce::String (snapshot.activeVoices);
-
-    if (snapshot.sustainValue >= core::sustainPedalThreshold)
-        status << separator << "PEDAL";
-
-    status << separator << "vol " << juce::String (juce::roundToInt (snapshot.masterVolume * 100.0f)) << " %";
-
-    // Qué control continuo mandó el teclado por última vez. Sirve para saber
-    // qué CC usa cada controlador sin tener que buscarlo en el manual.
+    // Qué control continuo mandó el teclado por última vez: sirve para saber qué
+    // CC usa cada controlador sin tener que buscarlo en el manual.
     if (snapshot.lastControllerNumber >= 0)
-        status << separator << "CC" << juce::String (snapshot.lastControllerNumber)
-               << "=" << juce::String (snapshot.lastControllerValue);
+        technical << separator << "último mando CC"_u8 << juce::String (snapshot.lastControllerNumber)
+                  << " = " << juce::String (snapshot.lastControllerValue);
 
-    if (snapshot.midiRejected > 0)
-        status << separator << "MIDI PERDIDO " << juce::String (snapshot.midiRejected);
-
-    statusLabel.setText (status, juce::dontSendNotification);
+    technicalLabel.setText (technical, juce::dontSendNotification);
 }
 
 // ── Pintado y disposición ───────────────────────────────────────────────────
 
 void MainComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour { 0xff1d1f24 });
+    g.fillAll (theme::background);
+
+    // Una línea que separa la barra de controles del escenario: sin ella, los
+    // desplegables del ejercicio y las tarjetas parecen la misma cosa.
+    g.setColour (theme::border);
+    g.fillRect (0, 96, getWidth(), 1);
 }
 
 void MainComponent::resized()
 {
-    auto area = getLocalBounds().reduced (12);
+    auto area = getLocalBounds();
 
-    auto topRow = area.removeFromTop (28);
-    audioDeviceBox.setBounds (topRow.removeFromLeft (330));
-    topRow.removeFromLeft (8);
-    bufferSizeBox.setBounds (topRow.removeFromLeft (180));
-    topRow.removeFromLeft (8);
-    exclusiveToggle.setBounds (topRow.removeFromLeft (240));
-    topRow.removeFromLeft (8);
-    startupToggle.setBounds (topRow.removeFromLeft (180));
+    // ── Barra superior: el sonido ───────────────────────────────────────────
+    auto top = area.removeFromTop (52).reduced (14, 11);
 
-    area.removeFromTop (8);
+    settingsButton.setBounds (top.removeFromRight (96));
+    top.removeFromRight (8);
+    panicButton.setBounds (top.removeFromRight (90));
 
-    auto secondRow = area.removeFromTop (28);
-    midiDeviceBox.setBounds (secondRow.removeFromLeft (330));
-    secondRow.removeFromLeft (8);
-    panicButton.setBounds (secondRow.removeFromLeft (100));
-    secondRow.removeFromLeft (20);
-    instrumentBox.setBounds (secondRow.removeFromLeft (180));
-    secondRow.removeFromLeft (16);
-    listenToggle.setBounds (secondRow.removeFromLeft (140));
-    secondRow.removeFromLeft (4);
-    listenDeviceBox.setBounds (secondRow.removeFromLeft (180));
-    secondRow.removeFromLeft (4);
-    recordListenButton.setBounds (secondRow.removeFromLeft (110));
+    instrumentBox.setBounds (top.removeFromLeft (190));
+    top.removeFromLeft (22);
+    volumeLabel.setBounds (top.removeFromLeft (60));
+    volumeSlider.setBounds (top.removeFromLeft (120));
+    top.removeFromLeft (18);
+    reverbLabel.setBounds (top.removeFromLeft (38));
+    reverbSlider.setBounds (top.removeFromLeft (120));
+    top.removeFromLeft (18);
+    tremoloLabel.setBounds (top.removeFromLeft (60));
+    tremoloSlider.setBounds (top.removeFromLeft (120));
 
-    area.removeFromTop (8);
+    // ── Barra del ejercicio ─────────────────────────────────────────────────
+    auto bar = area.removeFromTop (44).reduced (14, 6);
 
-    // Los tres mandos de sonido juntos y el aprendizaje al lado: con el
-    // trémolo ya no cabían en la fila de los dispositivos, y mezclar "qué
-    // aparato uso" con "cómo suena" nunca fue buena idea.
-    auto effectsRow = area.removeFromTop (28);
-    volumeLabel.setBounds (effectsRow.removeFromLeft (62));
-    volumeSlider.setBounds (effectsRow.removeFromLeft (130));
-    effectsRow.removeFromLeft (12);
-    reverbLabel.setBounds (effectsRow.removeFromLeft (40));
-    reverbSlider.setBounds (effectsRow.removeFromLeft (130));
-    effectsRow.removeFromLeft (12);
-    tremoloLabel.setBounds (effectsRow.removeFromLeft (62));
-    tremoloSlider.setBounds (effectsRow.removeFromLeft (130));
-    effectsRow.removeFromLeft (20);
-    learnTargetBox.setBounds (effectsRow.removeFromLeft (110));
-    effectsRow.removeFromLeft (6);
-    learnButton.setBounds (effectsRow.removeFromLeft (90));
+    exerciseButton.setBounds (bar.removeFromRight (104));
+    bar.removeFromRight (14);
+    tempoSlider.setBounds (bar.removeFromRight (170));
+    metronomeToggle.setBounds (bar.removeFromRight (112));
+    bar.removeFromRight (14);
+    modeBox.setBounds (bar.removeFromRight (124));
+    bar.removeFromRight (14);
 
-    area.removeFromTop (10);
-    messageLabel.setBounds (area.removeFromTop (22));
+    kindBox.setBounds (bar.removeFromLeft (112));
+    bar.removeFromLeft (6);
+    tonicBox.setBounds (bar.removeFromLeft (62));
+    bar.removeFromLeft (6);
+    handBox.setBounds (bar.removeFromRight (96));
+    bar.removeFromRight (6);
 
-    area.removeFromTop (6);
+    const auto optionSlot = bar.removeFromRight (140);
+    optionBox.setBounds (optionSlot);
+    importButton.setBounds (optionSlot);
+    bar.removeFromRight (6);
+    variantBox.setBounds (bar);
 
-    auto builderRow = area.removeFromTop (26);
-    kindBox.setBounds (builderRow.removeFromLeft (120));
-    builderRow.removeFromLeft (6);
-    tonicBox.setBounds (builderRow.removeFromLeft (66));
-    builderRow.removeFromLeft (6);
-    variantBox.setBounds (builderRow.removeFromLeft (300));
-    builderRow.removeFromLeft (6);
-    optionBox.setBounds (builderRow.removeFromLeft (180));
-    builderRow.removeFromLeft (6);
-    handBox.setBounds (builderRow.removeFromLeft (110));
-    builderRow.removeFromLeft (10);
-    importButton.setBounds (builderRow.removeFromLeft (110));
+    // ── Barra de estado ─────────────────────────────────────────────────────
+    auto statusBar = area.removeFromBottom (30).reduced (16, 4);
+    messageLabel.setBounds (statusBar.removeFromLeft (statusBar.getWidth() * 55 / 100));
+    statusLabel.setBounds (statusBar);
 
-    area.removeFromTop (6);
+    // ── El teclado ──────────────────────────────────────────────────────────
+    // El escenario tiene la altura que necesita su contenido —el acorde en
+    // grande y tres líneas— y el resto es del teclado. Con la mitad para cada
+    // uno, dos tercios de cada tarjeta quedaban vacíos.
+    const int stageHeight = juce::jlimit (190, 250, area.getHeight() * 42 / 100);
+    keyboardView.setBounds (area.removeFromBottom (area.getHeight() - stageHeight).reduced (14, 0));
 
-    auto exerciseRow = area.removeFromTop (26);
-    modeBox.setBounds (exerciseRow.removeFromLeft (120));
-    exerciseRow.removeFromLeft (8);
-    exerciseButton.setBounds (exerciseRow.removeFromLeft (90));
-    exerciseRow.removeFromLeft (16);
-    metronomeToggle.setBounds (exerciseRow.removeFromLeft (110));
-    tempoSlider.setBounds (exerciseRow.removeFromLeft (200));
+    // ── El escenario: las tres tarjetas ─────────────────────────────────────
+    auto stage = area.reduced (14, 12);
+    constexpr int gap = 12;
 
-    area.removeFromTop (6);
-    exerciseView.setBounds (area.removeFromTop (72));
+    exerciseView.setBounds (stage.removeFromLeft (stage.getWidth() * 38 / 100));
+    stage.removeFromLeft (gap);
 
-    area.removeFromTop (6);
-    nowPlayingView.setBounds (area.removeFromTop (40));
-    area.removeFromTop (2);
-    listeningView.setBounds (area.removeFromTop (48));
-    area.removeFromTop (6);
+    nowPlayingView.setBounds (stage.removeFromLeft ((stage.getWidth() - gap) * 40 / 100));
+    stage.removeFromLeft (gap);
 
-    statusLabel.setBounds (area.removeFromBottom (22));
-    area.removeFromBottom (8);
+    const auto listeningCard = stage;
+    listeningView.setBounds (listeningCard);
 
-    keyboardView.setBounds (area);
+    // Los controles de la escucha, en la cabecera de su tarjeta.
+    auto header = listeningCard.reduced (12, 7).removeFromTop (theme::cardHeaderHeight + 6);
+    recordListenButton.setBounds (header.removeFromRight (78));
+    header.removeFromRight (8);
+    listenToggle.setBounds (header.removeFromRight (100));
+
+    settingsPanel.setBounds (getLocalBounds());
+}
+
+void MainComponent::showSettings (bool shouldShow)
+{
+    settingsPanel.setVisible (shouldShow);
+
+    if (shouldShow)
+    {
+        settingsPanel.toFront (true);
+        settingsPanel.resized();
+    }
+}
+
+void MainComponent::layoutSettings (juce::Rectangle<int> card)
+{
+    settingsTexts.clear();
+
+    auto area = card.reduced (28, 22);
+
+    const auto header = [this, &area] (const juce::String& title)
+    {
+        area.removeFromTop (14);
+        settingsTexts.push_back ({ area.removeFromTop (20), title, true });
+        area.removeFromTop (4);
+    };
+
+    const auto row = [&area] (int height = 30) { auto r = area.removeFromTop (height); area.removeFromTop (6); return r; };
+
+    const auto label = [this] (juce::Rectangle<int>& r, const juce::String& text, int width)
+    {
+        settingsTexts.push_back ({ r.removeFromLeft (width), text, false });
+    };
+
+    // ── Título ──────────────────────────────────────────────────────────────
+    auto titleRow = area.removeFromTop (32);
+    closeSettingsButton.setBounds (titleRow.removeFromRight (90).reduced (0, 2));
+    settingsTexts.push_back ({ titleRow, "Ajustes", false, true });
+
+    constexpr int labelWidth = 150;
+
+    // ── Sonido ──────────────────────────────────────────────────────────────
+    header ("SONIDO");
+    {
+        auto r = row();
+        label (r, "Salida", labelWidth);
+        audioDeviceBox.setBounds (r.removeFromLeft (360));
+        r.removeFromLeft (10);
+        bufferSizeBox.setBounds (r.removeFromLeft (200));
+    }
+    {
+        auto r = row (26);
+        r.removeFromLeft (labelWidth);
+        exclusiveToggle.setBounds (r.removeFromLeft (320));
+    }
+
+    // ── Teclado ─────────────────────────────────────────────────────────────
+    header ("TECLADO MIDI");
+    {
+        auto r = row();
+        label (r, "Entrada", labelWidth);
+        midiDeviceBox.setBounds (r.removeFromLeft (360));
+    }
+    {
+        auto r = row();
+        label (r, "Mando del teclado", labelWidth);
+        learnTargetBox.setBounds (r.removeFromLeft (140));
+        r.removeFromLeft (10);
+        learnButton.setBounds (r.removeFromLeft (110));
+    }
+
+    // ── Escuchar el PC ──────────────────────────────────────────────────────
+    header ("ESCUCHAR EL PC");
+    {
+        auto r = row();
+        label (r, "Salida a escuchar", labelWidth);
+        listenDeviceBox.setBounds (r.removeFromLeft (360));
+    }
+
+    // ── Keyla ───────────────────────────────────────────────────────────────
+    header ("KEYLA");
+    {
+        auto r = row (26);
+        r.removeFromLeft (labelWidth);
+        startupToggle.setBounds (r.removeFromLeft (260));
+    }
+
+    // ── Detalles técnicos ───────────────────────────────────────────────────
+    header ("DETALLES TÉCNICOS"_u8);
+    technicalLabel.setBounds (area.removeFromTop (40));
+
+    settingsPanel.repaint();
+}
+
+void MainComponent::applyPreviewState()
+{
+    // Un acorde tocado: Do mayor, con el Do central.
+    EngineSnapshot played;
+
+    for (int note : { 60, 64, 67 })
+    {
+        EngineSnapshot::setBit (played.sounding, note);
+        EngineSnapshot::setBit (played.keysDown, note);
+    }
+
+    nowPlayingView.updateFrom (played);
+
+    // Una canción sonando, en Fa, con su sugerencia.
+    ListeningReading reading;
+    reading.active = true;
+    reading.receivingAudio = true;
+    reading.hearingMusic = true;
+    reading.rootPitchClass = 5;
+    reading.quality = core::ChordQuality::major;
+    reading.chordSymbol = "F";
+    reading.keyName = "Do mayor";
+    reading.deviceName = "SteelSeries Sonar - Gaming";
+    reading.progression = "C  G  Am  F";
+    listeningView.updateFrom (reading);
+    listeningView.setSuggestion ("C4 F4 A4, bajo F2");
+    listenToggle.setToggleState (true, juce::dontSendNotification);
+
+    played.keysDown[0] = played.keysDown[1] = 0;
+    keyboardView.updateFrom (played);
+    keyboardView.setExpectedPitches ({ 41, 60, 65, 69 });
+
+    // Un ejercicio en marcha.
+    runner.start (buildSelectedExercise(), 0.0);
+    exerciseView.refresh (runner);
+    exerciseButton.setButtonText ("Parar");
+
+    messageLabel.setText ("Escuchando. Pon una canción y Keyla irá sacando los acordes."_u8,
+                          juce::dontSendNotification);
+    messageLabel.setColour (juce::Label::textColourId, theme::accent);
+    statusLabel.setText ("Teclado SE49   ·   Pedal"_u8, juce::dontSendNotification);
 }
 
 } // namespace keyla::app

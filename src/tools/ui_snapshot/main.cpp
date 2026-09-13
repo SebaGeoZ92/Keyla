@@ -14,11 +14,30 @@ int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI gui;
 
-    const juce::File output = argc > 1
-        ? juce::File (juce::String (juce::CharPointer_UTF8 (argv[1])))
-        : juce::File::getCurrentWorkingDirectory().getChildFile ("keyla.png");
+    juce::StringArray args;
+
+    for (int i = 1; i < argc; ++i)
+        args.add (juce::String (juce::CharPointer_UTF8 (argv[i])));
+
+    const auto outputName = [&args]
+    {
+        for (const auto& arg : args)
+            if (! arg.startsWith ("--"))
+                return arg;
+
+        return juce::String ("keyla.png");
+    }();
+
+    const juce::File output = juce::File::getCurrentWorkingDirectory().getChildFile (outputName);
 
     auto component = std::make_unique<keyla::app::MainComponent> (true);
+
+    // --demo: con contenido de muestra. --settings: con el panel de ajustes abierto.
+    if (args.contains ("--demo"))
+        component->applyPreviewState();
+
+    if (args.contains ("--settings"))
+        component->showSettings (true);
 
     // **No se deja correr el bucle de mensajes.** La primera versión lo hacía
     // 400 ms para que se rellenaran los textos del temporizador, y en ese rato

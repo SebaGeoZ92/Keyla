@@ -1,4 +1,5 @@
 #include "ListeningView.h"
+#include "Theme.h"
 
 #include <core/text/Utf8.h>
 
@@ -9,16 +10,19 @@ using keyla::operator""_u8;
 
 void ListeningView::paint (juce::Graphics& g)
 {
-    auto area = getLocalBounds().reduced (4, 0);
+    auto area = theme::paintCard (g, getLocalBounds(), "SUENA EN EL PC");
 
-    const juce::Colour dim { 0xff4a4f57 };
-    const juce::Colour label { 0xff8f98a3 };
+    const auto dimLine = [&g, &area] (const juce::String& message, juce::Colour colour)
+    {
+        g.setColour (colour);
+        g.setFont (juce::FontOptions (15.0f));
+        g.drawFittedText (message, area.removeFromTop (60), juce::Justification::topLeft, 3, 1.0f);
+    };
 
     if (! current.active)
     {
-        g.setColour (dim);
-        g.setFont (juce::FontOptions (15.0f));
-        g.drawText ("escucha apagada"_u8, area, juce::Justification::centredLeft, false);
+        dimLine ("Activa Escuchar y pon una canción: Keyla va sacando los acordes y "
+                 "te enciende las teclas."_u8, theme::textDim);
         return;
     }
 
@@ -26,61 +30,58 @@ void ListeningView::paint (juce::Graphics& g)
     // reconozco nada" sería echarle la culpa al reconocedor.
     if (! current.receivingAudio)
     {
-        g.setColour (juce::Colour { 0xffe4785e });
-        g.setFont (juce::FontOptions (15.0f));
-        g.drawText ("escuchando "_u8 + current.deviceName
-                        + ": no llega nada. Pon musica, o elige otra salida — "_u8
-                        + "hay mezcladores virtuales que no dejan escucharse."_u8,
-                    area, juce::Justification::centredLeft, false);
+        dimLine ("No llega nada de "_u8 + current.deviceName
+                 + ". ¿Está sonando algo? Si sí, elige otra salida en Ajustes: hay "
+                   "mezcladores virtuales que no dejan escucharse."_u8, theme::warning);
         return;
     }
 
     if (! current.hearingMusic)
     {
-        g.setColour (dim);
-        g.setFont (juce::FontOptions (15.0f));
-        g.drawText ("escuchando "_u8 + current.deviceName + ": silencio"_u8,
-                    area, juce::Justification::centredLeft, false);
+        dimLine ("Silencio en "_u8 + current.deviceName + "."_u8, theme::textDim);
         return;
     }
 
-    auto headlineArea = area.removeFromLeft (juce::jmin (area.getWidth(), 170));
+    // ── El acorde ───────────────────────────────────────────────────────────
+    auto headline = area.removeFromTop (juce::jmin (64, area.getHeight() / 2));
 
     if (current.chordSymbol.isNotEmpty())
     {
-        g.setColour (juce::Colour { 0xff7fb069 });
-        g.setFont (juce::FontOptions (26.0f, juce::Font::bold));
-        g.drawText (current.chordSymbol, headlineArea, juce::Justification::centredLeft, false);
+        g.setColour (theme::accent);
+        g.setFont (juce::FontOptions (50.0f, juce::Font::bold));
+        g.drawFittedText (current.chordSymbol, headline, juce::Justification::centredLeft, 1, 0.6f);
     }
     else
     {
-        g.setColour (dim);
-        g.setFont (juce::FontOptions (17.0f));
-        g.drawText ("¿?"_u8, headlineArea, juce::Justification::centredLeft, false);
+        g.setColour (theme::textDim);
+        g.setFont (juce::FontOptions (40.0f, juce::Font::bold));
+        g.drawText ("¿?"_u8, headline, juce::Justification::centredLeft, false);
     }
 
-    // Dos renglones: arriba el contexto, abajo lo accionable. Lo que hay que
-    // tocar va debajo y en claro porque es lo único de aquí que se usa con las
-    // manos; el resto es información.
-    auto contextArea = area.removeFromTop (area.getHeight() / 2);
-
-    juce::String detail;
-
-    if (current.keyName.isNotEmpty())
-        detail << "tonalidad " << current.keyName << "   ";
-
-    if (current.progression.isNotEmpty())
-        detail << current.progression;
-
-    g.setColour (label);
-    g.setFont (juce::FontOptions (13.0f));
-    g.drawText (detail, contextArea, juce::Justification::centredLeft, false);
-
-    if (suggestion.isNotEmpty())
+    // ── Qué tocar: lo único de aquí que se usa con las manos ────────────────
+    if (suggestion.isNotEmpty() && area.getHeight() >= 22)
     {
-        g.setColour (juce::Colour { 0xffe8eaed });
+        g.setColour (theme::text);
+        g.setFont (juce::FontOptions (16.0f));
+        g.drawFittedText ("Toca  "_u8 + suggestion, area.removeFromTop (24),
+                          juce::Justification::centredLeft, 1, 0.8f);
+    }
+
+    // ── El contexto ─────────────────────────────────────────────────────────
+    if (current.keyName.isNotEmpty() && area.getHeight() >= 20)
+    {
+        g.setColour (theme::textSecondary);
         g.setFont (juce::FontOptions (14.0f));
-        g.drawText ("toca:  "_u8 + suggestion, area, juce::Justification::centredLeft, false);
+        g.drawText ("Tonalidad "_u8 + current.keyName, area.removeFromTop (22),
+                    juce::Justification::centredLeft, true);
+    }
+
+    if (current.progression.isNotEmpty() && area.getHeight() >= 20)
+    {
+        g.setColour (theme::textDim);
+        g.setFont (juce::FontOptions (14.0f));
+        g.drawText (current.progression, area.removeFromTop (22),
+                    juce::Justification::centredLeft, true);
     }
 }
 

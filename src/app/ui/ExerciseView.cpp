@@ -1,4 +1,5 @@
 #include "ExerciseView.h"
+#include "Theme.h"
 
 #include <core/music/Pitch.h>
 #include <core/text/Utf8.h>
@@ -133,77 +134,78 @@ void ExerciseView::refresh (const core::ExerciseRunner& runner)
 
 void ExerciseView::paint (juce::Graphics& g)
 {
-    auto area = getLocalBounds().reduced (4, 0);
+    auto area = theme::paintCard (g, getLocalBounds(), "EJERCICIO");
 
     if (idle)
     {
-        g.setColour (juce::Colour { 0xff4a4f57 });
-        g.setFont (juce::FontOptions (14.0f));
-        g.drawText (rangeMessage.isNotEmpty() ? rangeMessage
-                                              : "Elige un ejercicio y pulsa Empezar."_u8,
-                    area, juce::Justification::centredLeft, false);
+        g.setColour (rangeMessage.isNotEmpty() ? theme::warning : theme::textDim);
+        g.setFont (juce::FontOptions (15.0f));
+        g.drawFittedText (rangeMessage.isNotEmpty()
+                              ? rangeMessage
+                              : "Elige un ejercicio en la barra de arriba y pulsa Empezar."_u8,
+                          area.removeFromTop (60), juce::Justification::topLeft, 3, 1.0f);
         return;
     }
 
-    // ── Barra de progreso ───────────────────────────────────────────────────
-    auto barArea = area.removeFromBottom (4).toFloat();
+    // ── Título y posición, con la barra de progreso justo debajo ────────────
+    //
+    // La barra iba al pie de la tarjeta, lejos de todo lo que describe. Pegada
+    // al título se lee como lo que es: cuánto llevas de *este* ejercicio.
+    auto titleRow = area.removeFromTop (22);
 
-    g.setColour (juce::Colour { 0xff2b2f36 });
-    g.fillRect (barArea);
+    g.setColour (theme::textSecondary);
+    g.setFont (juce::FontOptions (14.0f));
+    g.drawText (positionText, titleRow.removeFromRight (90), juce::Justification::centredRight, false);
+    g.drawFittedText (title, titleRow, juce::Justification::centredLeft, 1, 0.8f);
 
-    g.setColour (finished ? juce::Colour { 0xff7fb069 } : juce::Colour { 0xff4f9dd9 });
-    g.fillRect (barArea.withWidth (barArea.getWidth() * static_cast<float> (progress)));
+    area.removeFromTop (4);
+    auto barArea = area.removeFromTop (5).toFloat();
 
-    area.removeFromBottom (6);
+    g.setColour (theme::border);
+    g.fillRoundedRectangle (barArea, 2.5f);
 
-    // ── Título y posición ───────────────────────────────────────────────────
-    auto titleRow = area.removeFromTop (20);
-
-    g.setColour (juce::Colour { 0xffb9c0c9 });
-    g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
-    g.drawText (title, titleRow.removeFromLeft (titleRow.getWidth() - 110),
-                juce::Justification::centredLeft, true);
-
-    g.setColour (juce::Colour { 0xff8f98a3 });
-    g.setFont (juce::FontOptions (13.0f));
-    g.drawText (positionText, titleRow, juce::Justification::centredRight, false);
+    g.setColour (finished ? theme::accent : theme::progress);
+    g.fillRoundedRectangle (barArea.withWidth (barArea.getWidth() * static_cast<float> (progress)), 2.5f);
 
     // ── El informe, si lo hay ───────────────────────────────────────────────
     if (showingReport)
     {
-        g.setColour (juce::Colour { 0xffd6dbe0 });
-        g.setFont (juce::FontOptions (13.5f));
+        g.setColour (theme::text);
+        g.setFont (juce::FontOptions (14.0f));
 
         for (const auto& line : reportLines)
         {
-            if (area.getHeight() < 16)
+            if (area.getHeight() < 18)
                 break;
 
-            g.drawText (line, area.removeFromTop (16), juce::Justification::centredLeft, true);
+            g.drawFittedText (line, area.removeFromTop (18), juce::Justification::centredLeft, 1, 0.85f);
         }
 
         return;
     }
 
-    // ── Lo que toca ahora, o el resumen al terminar ─────────────────────────
-    auto mainRow = area.removeFromTop (26);
+    // ── Lo que toca ahora, en grande; o el resumen al terminar ──────────────
+    area.removeFromTop (4);
+    auto mainRow = area.removeFromTop (finished ? 30 : 48);
 
-    g.setColour (finished ? juce::Colour { 0xff9fd07f } : juce::Colour { 0xffe8eaed });
-    g.setFont (juce::FontOptions (finished ? 15.0f : 20.0f, juce::Font::bold));
-    g.drawText (nextText, mainRow, juce::Justification::centredLeft, true);
+    g.setColour (finished ? theme::accent : theme::text);
+    g.setFont (juce::FontOptions (finished ? 18.0f : 36.0f, juce::Font::bold));
+    g.drawFittedText (nextText, mainRow, juce::Justification::centredLeft, 1, 0.6f);
 
     // ── Pista o consejo ─────────────────────────────────────────────────────
+    area.removeFromTop (4);
+
     if (nudge.isNotEmpty())
     {
-        g.setColour (juce::Colour { 0xffe0b062 });
-        g.setFont (juce::FontOptions (13.0f));
-        g.drawText (nudge, area, juce::Justification::centredLeft, true);
+        g.setColour (theme::warning);
+        g.setFont (juce::FontOptions (15.0f));
+        g.drawFittedText (nudge, area, juce::Justification::topLeft, 2, 0.9f);
     }
     else if (! finished && hint.isNotEmpty())
     {
-        g.setColour (juce::Colour { 0xff6c737d });
-        g.setFont (juce::FontOptions (12.5f));
-        g.drawText (hint, area, juce::Justification::centredLeft, true);
+        g.setColour (theme::textDim);
+        g.setFont (juce::FontOptions (14.0f));
+        g.drawFittedText (hint, area, juce::Justification::topLeft, 2, 0.9f);
     }
 }
 

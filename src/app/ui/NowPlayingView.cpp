@@ -1,4 +1,5 @@
 #include "NowPlayingView.h"
+#include "Theme.h"
 
 #include <core/music/ChordRecognizer.h>
 #include <core/music/Pitch.h>
@@ -89,29 +90,33 @@ void NowPlayingView::rebuildText (const std::vector<int>& notes)
 
 void NowPlayingView::paint (juce::Graphics& g)
 {
-    auto area = getLocalBounds().reduced (4, 0);
+    auto area = theme::paintCard (g, getLocalBounds(), "TÚ TOCAS"_u8);
 
     if (! hasContent)
     {
-        g.setColour (juce::Colour { 0xff4a4f57 });
+        g.setColour (theme::textDim);
         g.setFont (juce::FontOptions (15.0f));
-        g.drawText ("toca algo"_u8, area, juce::Justification::centredLeft, false);
+        g.drawFittedText ("Toca algo en el teclado."_u8, area.removeFromTop (40),
+                          juce::Justification::topLeft, 2, 1.0f);
         return;
     }
-
-    auto headlineArea = area.removeFromLeft (juce::jmin (area.getWidth(), 340));
 
     // Atenuado si es la lectura de algo que ya soltaste, para que se vea de un
     // vistazo si suena ahora o es lo anterior.
     const float alpha = holdingLast ? 0.45f : 1.0f;
 
-    g.setColour (juce::Colour { 0xffe8eaed }.withAlpha (alpha));
-    g.setFont (juce::FontOptions (26.0f, juce::Font::bold));
-    g.drawText (headline, headlineArea, juce::Justification::centredLeft, false);
+    // El cifrado en grande; si son notas sueltas sin cifrado, más pequeño para
+    // que quepan, pero en el mismo sitio.
+    auto headlineArea = area.removeFromTop (juce::jmin (64, area.getHeight() / 2));
+    const bool isChordSymbol = headline.length() <= 8;
 
-    g.setColour (juce::Colour { 0xff8f98a3 }.withAlpha (alpha));
+    g.setColour (theme::text.withAlpha (alpha));
+    g.setFont (juce::FontOptions (isChordSymbol ? 50.0f : 26.0f, juce::Font::bold));
+    g.drawFittedText (headline, headlineArea, juce::Justification::centredLeft, 1, 0.5f);
+
+    g.setColour (theme::textSecondary.withAlpha (alpha));
     g.setFont (juce::FontOptions (15.0f));
-    g.drawText (detail, area, juce::Justification::centredLeft, false);
+    g.drawFittedText (detail, area.removeFromTop (44), juce::Justification::topLeft, 2, 0.9f);
 }
 
 } // namespace keyla::app

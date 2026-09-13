@@ -192,3 +192,12 @@ TEST_CASE ("La descripción está en castellano y sin jerga", "[music][chord]")
     CHECK (match.description.contains ("mayor"));
     CHECK (match.description.contains (juce::String (juce::CharPointer_UTF8 ("primera inversión"))));
 }
+
+TEST_CASE ("Los nombres en solfeo siguen la ortografia normal", "[music][names]")
+{
+    CHECK (spanishPitchClassName (0) == "Do");
+    CHECK (spanishPitchClassName (10, conventionalAccidental (10, false)) == "Si bemol");
+    CHECK (spanishPitchClassName (6, conventionalAccidental (6, true)) == "Fa sostenido");
+    CHECK (spanishPitchClassName (1, conventionalAccidental (1, false)) == "Re bemol");
+    CHECK (spanishPitchClassName (1, conventionalAccidental (1, true)) == "Do sostenido");
+}

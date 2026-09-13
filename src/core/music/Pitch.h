@@ -28,6 +28,18 @@ enum class Accidental
 /** Nombre de la clase de altura, 0 = Do. */
 juce::String pitchClassName (int pitchClass, Accidental accidental = Accidental::sharps);
 
+/** Nombre en solfeo: "Do", "Fa sostenido", "Si bemol".
+
+    Regla de la interfaz: **los cifrados en letras y los nombres en solfeo**.
+    "Bb" es lo que se lee en Chordify y en cualquier cancionero; "Si bemol
+    mayor" es como se dice. Mezclarlos —"Tonalidad C mayor"— es lo que no. */
+juce::String spanishPitchClassName (int pitchClass, Accidental accidental = Accidental::sharps);
+
+/** Cómo se escribe normalmente la fundamental de una tonalidad o un acorde:
+    Si bemol mayor y no La sostenido mayor, pero Fa sostenido menor y no Sol
+    bemol menor. */
+Accidental conventionalAccidental (int rootPitchClass, bool minor);
+
 /** Nombre completo con octava: "C4", "F#3", "Bb5". */
 juce::String noteName (int midiNote, Accidental accidental = Accidental::sharps);
 

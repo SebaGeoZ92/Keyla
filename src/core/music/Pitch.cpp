@@ -71,4 +71,42 @@ juce::String intervalName (int lowNote, int highNote)
     return result;
 }
 
+juce::String spanishPitchClassName (int pitchClass, Accidental accidental)
+{
+    static const char* const naturals[7] = { "Do", "Re", "Mi", "Fa", "Sol", "La", "Si" };
+    static const int naturalClasses[7]   = { 0, 2, 4, 5, 7, 9, 11 };
+
+    const int index = ((pitchClass % 12) + 12) % 12;
+
+    for (int i = 0; i < 7; ++i)
+        if (naturalClasses[i] == index)
+            return juce::String (juce::CharPointer_UTF8 (naturals[i]));
+
+    if (accidental == Accidental::flats)
+    {
+        for (int i = 0; i < 7; ++i)
+            if (naturalClasses[i] == ((index + 1) % 12))
+                return juce::String (juce::CharPointer_UTF8 (naturals[i])) + juce::String (" bemol");
+    }
+
+    for (int i = 6; i >= 0; --i)
+        if (naturalClasses[i] == ((index + 11) % 12))
+            return juce::String (juce::CharPointer_UTF8 (naturals[i])) + juce::String (" sostenido");
+
+    return pitchClassName (index, accidental);
+}
+
+Accidental conventionalAccidental (int rootPitchClass, bool minor)
+{
+    switch (((rootPitchClass % 12) + 12) % 12)
+    {
+        case 1:  return minor ? Accidental::sharps : Accidental::flats;   // Do# menor / Re bemol mayor
+        case 3:  return Accidental::flats;                                // Mi bemol
+        case 6:  return Accidental::sharps;                               // Fa sostenido
+        case 8:  return minor ? Accidental::sharps : Accidental::flats;   // Sol# menor / La bemol mayor
+        case 10: return Accidental::flats;                                // Si bemol
+        default: return Accidental::sharps;
+    }
+}
+
 } // namespace keyla::core

@@ -334,7 +334,12 @@ Exercise generateProgression (const ProgressionRequest& request)
                 + juce::String (static_cast<int> (request.id)) + "."
                 + juce::String (static_cast<int> (request.voicing));
 
-    exercise.name = progressionName (request.id) + " en "_u8 + tonicName
+    // Los grados en minúscula al principio (i, ii...) son tónica menor.
+    const bool minorTonic = progressionDegrees (request.id).startsWith ("i");
+    const auto spokenTonic = spanishPitchClassName (pitchClassOf (tonic),
+                                                    conventionalAccidental (pitchClassOf (tonic), minorTonic));
+
+    exercise.name = progressionName (request.id) + " en "_u8 + spokenTonic
                   + "  ·  "_u8 + progressionDegrees (request.id)
                   + "  ·  "_u8 + voicingName (request.voicing);
 

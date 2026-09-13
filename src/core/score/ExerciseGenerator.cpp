@@ -184,7 +184,13 @@ Exercise generateScale (const ScaleRequest& request)
                 + juce::String (octaves) + "oct."
                 + (request.hand == Hand::left ? "lh" : "rh");
 
-    exercise.name = "Escala de "_u8 + rootName + " " + scaleTypeName (request.type)
+    // El id en letras, que es un identificador y no debe cambiar; el nombre en
+    // solfeo, que es lo que se lee. Ver spanishPitchClassName.
+    const auto spokenRoot = spanishPitchClassName (
+        pitchClassOf (request.rootPitch),
+        conventionalAccidental (pitchClassOf (request.rootPitch), scaleTypeName (request.type).contains ("menor")));
+
+    exercise.name = "Escala de "_u8 + spokenRoot + " " + scaleTypeName (request.type)
                   + "  ·  "_u8 + octaveCount (octaves)
                   + "  ·  "_u8 + handName (request.hand);
 
@@ -210,7 +216,11 @@ Exercise generateArpeggio (const ArpeggioRequest& request)
                 + juce::String (octaves) + "oct."
                 + (request.hand == Hand::left ? "lh" : "rh");
 
-    exercise.name = "Arpegio de "_u8 + rootName + " " + arpeggioTypeName (request.type)
+    const auto spokenRoot = spanishPitchClassName (
+        pitchClassOf (request.rootPitch),
+        conventionalAccidental (pitchClassOf (request.rootPitch), arpeggioTypeName (request.type).contains ("menor")));
+
+    exercise.name = "Arpegio de "_u8 + spokenRoot + " " + arpeggioTypeName (request.type)
                   + "  ·  "_u8 + octaveCount (octaves)
                   + "  ·  "_u8 + handName (request.hand);
 

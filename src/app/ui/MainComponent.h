@@ -6,6 +6,8 @@
 #include "../SettingsStore.h"
 #include "ExerciseView.h"
 #include "ListeningView.h"
+#include "OverlayPanel.h"
+#include "Theme.h"
 #include "NowPlayingView.h"
 #include "PianoKeyboardView.h"
 
@@ -48,6 +50,14 @@ public:
     std::function<void()> onWakeRequested;
     std::function<void()> onSleepRequested;
 
+    void showSettings (bool shouldShow);
+
+    /** Rellena la ventana con un estado de muestra —un acorde tocado, una
+        canción sonando, un ejercicio a medias— **sólo para `keyla_snapshot`**.
+        La aplicación nunca lo llama: sirve para poder ver la interfaz con
+        contenido desde el código, en vez de sólo vacía. */
+    void applyPreviewState();
+
 private:
     void timerCallback() override;
 
@@ -68,9 +78,16 @@ private:
     void rebuildListenDeviceList();
     void applyListening();
     void updateAccompaniment();
+    void layoutSettings (juce::Rectangle<int> card);
+    void updateStatusBar (const EngineSnapshot& snapshot);
     void toggleSessionRecording();
     void updateUnattendedState();
     void setOpenWithWindows (bool shouldOpen);
+
+    /** Primero de todos los miembros a propósito: los controles se destruyen
+        en orden inverso al de declaración, y el aspecto tiene que seguir vivo
+        mientras ellos lo usan. */
+    theme::LookAndFeel lookAndFeel;
 
     // ── Dominio de tiempo real ──────────────────────────────────────────────
     //
@@ -147,7 +164,35 @@ private:
     juce::TextButton exerciseButton { "Empezar" };
     juce::TextButton importButton { "Abrir MIDI..." };
     std::unique_ptr<juce::FileChooser> chooser;
-    juce::ToggleButton metronomeToggle { "Metronomo" };
+    juce::ToggleButton metronomeToggle;
+
+    // ── Ajustes ─────────────────────────────────────────────────────────────
+    //
+    // Lo que se toca una vez y nunca más. Estaba siempre a la vista, en las
+    // tres primeras filas de la ventana, justo donde van los ojos al tocar.
+    juce::TextButton settingsButton { "Ajustes" };
+    juce::TextButton closeSettingsButton { "Cerrar" };
+    OverlayPanel settingsPanel;
+
+    /** Los números técnicos: frecuencia, buffer, latencia, CPU. Viven en los
+        ajustes y no en la barra de abajo, que ahora habla en castellano y sólo
+        cuando hace falta. */
+    juce::Label technicalLabel;
+
+    struct PanelText
+    {
+        juce::Rectangle<int> area;
+        juce::String text;
+        bool isHeader { false };
+        bool isTitle { false };
+    };
+
+    std::vector<PanelText> settingsTexts;
+
+    /** Los mensajes se van solos: uno de hace diez minutos diciendo "Sonando
+        por..." no informa de nada y tapa el siguiente que sí importe. */
+    juce::uint32 messageShownAtMs { 0 };
+    bool messageIsShowing { false };
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
 
     /** Ajustes recordados entre sesiones. Se llama `prefs` y no `settings`

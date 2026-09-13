@@ -210,7 +210,7 @@ private:
             setUsingNativeTitleBar (true);
             setContentOwned (content, true);
             setResizable (true, false);
-            setResizeLimits (720, 340, 4000, 1400);
+            setResizeLimits (1180, 640, 4000, 1600);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
 

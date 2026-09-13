@@ -62,30 +62,6 @@ namespace
         }
     }
 
-    juce::String spanishNoteName (int pitchClass, Accidental accidental)
-    {
-        static const char* const naturals[7] = { "Do", "Re", "Mi", "Fa", "Sol", "La", "Si" };
-        static const int naturalClasses[7]   = { 0, 2, 4, 5, 7, 9, 11 };
-
-        const int index = ((pitchClass % 12) + 12) % 12;
-
-        for (int i = 0; i < 7; ++i)
-            if (naturalClasses[i] == index)
-                return juce::String (juce::CharPointer_UTF8 (naturals[i]));
-
-        if (accidental == Accidental::flats)
-        {
-            for (int i = 0; i < 7; ++i)
-                if (naturalClasses[i] == ((index + 1) % 12))
-                    return juce::String (juce::CharPointer_UTF8 (naturals[i])) + " bemol"_u8;
-        }
-
-        for (int i = 6; i >= 0; --i)
-            if (naturalClasses[i] == ((index + 11) % 12))
-                return juce::String (juce::CharPointer_UTF8 (naturals[i])) + " sostenido"_u8;
-
-        return pitchClassName (index, accidental);
-    }
 
     juce::String inversionDescription (int inversion)
     {
@@ -243,7 +219,7 @@ ChordMatch ChordRecognizer::recognise (const std::vector<int>& notes)
             if (match.inversion != 0)
                 match.symbol += "/" + pitchClassName (match.bassPitchClass, accidental);
 
-            match.description = spanishNoteName (candidateRoot, accidental)
+            match.description = spanishPitchClassName (candidateRoot, accidental)
                               + " " + qualityDescription (templ.quality)
                               + inversionDescription (match.inversion);
 

@@ -125,6 +125,27 @@ porque la suma de dos senos opuestos es constante. Con un tercio de ciclo hay
 movimiento estéreo y la suma en mono sigue vaivén: medido, 93 %. Hay un test
 que se cae si alguien lo "mejora" poniéndolos en oposición.
 
+**La interfaz, rehecha mirándola.** Se fue montando fila a fila, una por
+función, sin ver nunca el resultado; cuando por fin se miró parecía un panel de
+configuración: tres filas de dispositivos siempre a la vista y lo musical en
+renglones grises. Ahora hay una barra de sonido (instrumento, volumen, sala,
+trémolo), una del ejercicio, **tres tarjetas** —*Ejercicio*, *Tú tocas*, *Suena
+en el PC*— con el acorde en grande, el teclado, y una barra de estado en
+castellano que sólo avisa cuando algo va mal. Salida, buffer, MIDI, arranque
+con Windows y los números técnicos van a un panel de **Ajustes**.
+
+- `ui/Theme.h` es el único sitio con colores. **El verde es de Keyla y
+  significa "esto es música"** —el acorde que suena, las teclas a tocar, el
+  botón de empezar—; si decora, deja de señalar.
+- **Cifrados en letras, nombres en solfeo**: "Bb" como en Chordify, "Si bemol
+  mayor" como se dice. La interfaz mezclaba "Do mayor" con "Tonalidad C mayor".
+  `spanishPitchClassName` + `conventionalAccidental` (Pitch.h) lo resuelven en
+  un sitio; los identificadores de ejercicio siguen en letras porque se guardan.
+- **`keyla_snapshot [--demo] [--settings] salida.png`** dibuja la ventana sin
+  abrirla y sin tocar dispositivos. Es lo que permite diseñar mirando. La
+  primera versión dejaba correr el temporizador, detectaba el teclado, salía
+  del modo desatendido y abría la salida en exclusivo con Keyla sonando al lado.
+
 **Fase 3 empezada**: modo espera funcionando. Generador de escalas y arpegios,
 máquina de estados que no avanza hasta que aciertas, evaluación de alturas
 —nunca de ritmo, que aquí no existe— y adaptación al rango del teclado.
