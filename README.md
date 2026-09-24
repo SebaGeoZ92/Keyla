@@ -1,42 +1,104 @@
 # Keyla
 
-Aplicación de escritorio para Windows para aprender y practicar piano con un
-teclado MIDI. Independiente: sin DAW, sin plugins.
+Aplicación de escritorio para Windows para aprender piano con un teclado MIDI.
+Independiente: sin DAW, sin plugins, sin suscripción. Instrumento y profesor en
+el mismo programa.
+
+![La ventana de Keyla](docs/ventana.png)
+
+Keyla hace tres cosas:
+
+- **Suena.** Once instrumentos sintetizados, con 7,5 ms de latencia medidos de
+  la tecla al oído y cero cortes en diez minutos.
+- **Enseña.** Escalas, arpegios y progresiones en cualquier tonalidad, en modo
+  espera (no avanza hasta que aciertas) o a tempo con metrónomo, y un informe
+  al final sobre tu ritmo.
+- **Escucha.** Pon una canción en el ordenador y Keyla saca los acordes, la
+  tonalidad, y te enciende en pantalla las teclas para acompañarla.
+
+## Probarlo
+
+Necesitas **Windows 10 u 11 de 64 bits**. Un teclado MIDI si quieres tocar de
+verdad, pero **no hace falta para probarlo**: el teclado de la pantalla suena
+con el ratón.
+
+Descarga el ZIP de la sección [Releases](../../releases), descomprímelo y abre
+`Keyla.exe`. No hay instalador ni hace falta nada más: es un único ejecutable
+que sólo usa librerías de Windows.
+
+> **Windows va a avisarte de que no reconoce la aplicación.** Es lo que le pasa
+> a cualquier programa sin firma digital, que cuesta unos cientos de euros al
+> año. Pulsa *Más información* → *Ejecutar de todas formas*. Si tienes activado
+> *Control inteligente de aplicaciones*, lo bloqueará sin dar opción, y ahí no
+> hay truco: o lo desactivas —es irreversible sin reinstalar Windows— o
+> compilas tú el programa.
+
+La primera vez, si el sonido no sale por donde esperas, mira **Ajustes**: la
+salida de audio y la entrada MIDI se eligen ahí.
+
+## Compilar
+
+Hace falta CMake ≥ 3.22 y MSVC (las *Build Tools* de Visual Studio bastan).
+JUCE se descarga solo la primera vez.
 
 ```
-Teclado MIDI  →  USB  →  Keyla  →  audio  →  auriculares
+cmake -S . -B build
+cmake --build build --config Release --target keyla
 ```
 
-Instrumento y profesor en el mismo programa: recibe MIDI en tiempo real, genera
-sonido con baja latencia, y evalúa notas, ritmo y regularidad para dar feedback
-útil sobre cómo estás tocando.
+El ejecutable sale en `build/src/app/keyla_artefacts/Release/Keyla.exe`.
+**Siempre en Release**: en Debug las cifras de CPU no significan nada.
 
-## Estado
+Los tests no necesitan tarjeta de sonido ni teclado:
 
-**Fase de diseño.** Todavía no hay código. Ver la hoja de ruta.
+```
+cmake --build build --config Release --target keyla_tests
+build/bin/Release/keyla_tests.exe
+```
 
-## Documentación
+## Cómo está hecho
 
-| Documento | Contenido |
+```
+src/core/    todo lo que es música y medida. Sin UI, sin dispositivos, testeable
+src/app/     la ventana, WASAPI y MIDI. Lo único que toca el hardware
+src/tools/   utilidades de consola: medir latencia, analizar grabaciones, ...
+tests/       152 casos, sin hardware
+docs/        el diseño y por qué está así
+```
+
+La separación no es decorativa: **una regla de compilación falla si `core/`
+llega a depender de la interfaz o de los dispositivos**. Eso es lo que permite
+que casi todo el proyecto se pruebe sin enchufar nada.
+
+Hay diez invariantes de arquitectura —el hilo de audio no reserva memoria ni
+toma locks, el reloj de audio manda sobre todo lo demás, la evaluación es una
+función pura sobre grabaciones— explicados en
+[CLAUDE.md](CLAUDE.md) y en [`docs/`](docs/). Si algo parece retorcido, lo más
+probable es que sea por uno de ellos, y ahí está el motivo escrito.
+
+Herramientas que igual te sirven:
+
+| Herramienta | Para qué |
 |---|---|
-| [01 — Crítica y riesgos](docs/01-critica-y-riesgos.md) | Qué está mal planteado en la visión inicial, riesgos técnicos, qué no puede evaluar el MIDI |
-| [02 — Arquitectura](docs/02-arquitectura.md) | Dominios de ejecución, modelo temporal, motor de audio, evaluación, formatos |
-| [03 — Stack y estructura](docs/03-stack-y-estructura.md) | Comparación de stacks, ASIO vs WASAPI, estructura de directorios |
-| [04 — Medición de latencia](docs/04-medicion-de-latencia.md) | Cómo se mide objetivamente, calibración por loopback, criterios de aceptación |
-| [05 — Hoja de ruta](docs/05-hoja-de-ruta.md) | Fases 0–9 y definición del primer prototipo |
+| `audio_probe` | Mide latencia, dropouts, CPU y jitter MIDI de tu equipo |
+| `keyla_session` | Analiza una grabación de escucha y prueba cientos de ajustes del reconocedor |
+| `keyla_snapshot` | Dibuja la ventana en un PNG sin abrirla, para diseñar mirando |
 
-## Decisiones principales
+## Aportar
 
-- **C++ + JUCE + CMake**, con `core/` libre de dependencias de UI y de dispositivo.
-- **WASAPI Exclusive** por defecto; ASIO como build opcional (el SDK de Steinberg
-  no es redistribuible).
-- **El reloj de audio es el reloj maestro.** Todo evento se sella con una posición
-  de sample; la evaluación no depende del reloj del sistema ni del tamaño de buffer.
-- **Evaluar es analizar una grabación**: la evaluación es una función pura y
-  testeable, no un proceso en vivo.
-- **MIDI** como primer formato de importación; notación musical al final.
+Bienvenido. Un par de cosas que ahorran tiempo:
 
-## Hardware de referencia
+- **Los tests están para cazar errores reales, no para hacer bulto.** Cada uno
+  guarda un fallo que ya ocurrió: un trémolo que desaparecía al sumarse a mono,
+  una cuerda desafinada 13 cents, un bajo fantasma inventado a partir de la voz.
+  Si tocas el reconocimiento de acordes, corre `keyla_tests` antes y después.
+- **Nada es específico de un teclado concreto.** Debe funcionar con cualquier
+  controlador MIDI.
+- Comentarios y documentación en castellano; nombres de código en inglés.
 
-Nektar SE49 (USB-MIDI class compliant) sobre Windows. Ningún código es específico
-de ese modelo.
+Lo que falta y en qué orden lo haría: el final de
+[CLAUDE.md](CLAUDE.md#lo-que-falta-para-cerrar-de-verdad).
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE). Úsalo, cópialo y modifícalo con libertad.
