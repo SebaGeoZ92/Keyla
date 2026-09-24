@@ -17,9 +17,9 @@ El diseño completo está en `docs/`. Lo esencial:
 
 ## Para qué es esto
 
-**Keyla es la herramienta de el autor para aprender piano.** No es un producto
-que haya que lanzar. Las decisiones se miden por si le ayudan a practicar
-mañana, no por completitud de la hoja de ruta ni por hueco de mercado. Los
+**Keyla es una herramienta personal para aprender piano, no un producto que
+haya que lanzar.** Las decisiones se miden por si ayudan a practicar mañana, no
+por completitud de la hoja de ruta ni por hueco de mercado. Los
 `docs/` siguen siendo la referencia técnica, pero su parte de producto pesa
 menos que esto.
 
@@ -217,8 +217,8 @@ encendiendo las teclas de la pantalla.
 
 **Sesiones de escucha grabadas: cómo se mejora el reconocimiento.** Keyla no
 aprende sola —no hay nada dentro que cambie con el uso—, pero cada vez que
-el autor toca siguiendo una canción produce un examen corregido: sus teclas
-son la respuesta buena. El botón **Grabar** guarda el audio capturado y las
+alguien toca siguiendo una canción produce un examen corregido: sus teclas son
+la respuesta buena. El botón **Grabar** guarda el audio capturado y las
 notas del teclado en la misma escala de tiempo; al parar se reanaliza la
 grabación y se escribe `informe.txt` con acuerdo, desfase, confusiones y la
 línea de tiempo *oyó / sugirió / tocaste*.
@@ -238,9 +238,8 @@ línea de tiempo *oyó / sugirió / tocaste*.
 - Las grabaciones viven en `%APPDATA%\Keyla\sesiones` y **no van a git ni a
   `tests/`**: son canciones con derechos.
 
-**Primer ajuste con música real.** Sesión grabada tocando *Una y mil veces*
-(Los Forasteros) siguiendo Chordify: 4 min 32 s, cumbia con acordeón, voz y
-bajo. La grabación tiene errores y trozos tocados por diversión, y **sirve
+**Primer ajuste con música real.** Sesión grabada tocando una cumbia siguiendo
+los acordes de Chordify: 4 min 32 s, con acordeón, voz y bajo. La grabación tiene errores y trozos tocados por diversión, y **sirve
 igual**: esos errores bajan la nota de todos los ajustes por igual, así que la
 comparación entre ajustes sigue siendo válida aunque el porcentaje absoluto no
 lo sea.
@@ -272,7 +271,7 @@ Lo que se aprendió, y que conviene no desaprender:
 - Agudizar menos (1,5 en vez de 2) va mejor en mezclas: con 2 se hundía la
   tercera, que en una mezcla suele sonar más floja que la fundamental.
 
-**Segunda canción: el ajuste generaliza.** *Algo de mí*, bolero, 4 min 53 s: lo
+**Segunda canción: el ajuste generaliza.** Un bolero de 4 min 53 s: lo
 contrario de la cumbia —séptimas por todas partes, más cambios, voz delante—.
 El ajuste sacado **sólo** de la cumbia, sin tocarlo:
 
@@ -285,7 +284,7 @@ El ajuste sacado **sólo** de la cumbia, sin tocarlo:
 descalifica los que bajen del 90 % en los 48 acordes limpios. El actual queda
 a 1-2 puntos del mejor que no los rompe (67 % / 57 %), y **no se cambió**: esa
 diferencia es menor que el ruido de las propias grabaciones. Sólo los Dm que
-el autor tocó como D en el bolero son 8,5 s de 290, un 3 %. Cambiar el ajuste
+tocados como D en el bolero son 8,5 s de 290, un 3 %. Cambiar el ajuste
 por menos que eso es perseguir los errores de quien toca.
 
 Dos cosas que enseñó el bolero:
@@ -437,7 +436,7 @@ Opciones de CMake:
 | `KEYLA_JUCE_TAG` | 8.0.15 | Tag de JUCE a descargar. |
 | `KEYLA_JUCE_PATH` | — | Checkout de JUCE ya existente. |
 
-### Lo que sabemos de esta máquina
+### Lo que sabemos del equipo de referencia
 
 Medido con `audio_probe`, no supuesto:
 
@@ -454,7 +453,7 @@ Medido con `audio_probe`, no supuesto:
   modo que hay que elegir la salida física a mano — `--audio-out` en las
   herramientas, y en la app se prefiere automáticamente la física y se avisa si
   la elegida es virtual.
-- **Para escuchar, el predeterminado de Windows aquí no sirve.** Medido con
+- **Para escuchar, el predeterminado de Windows de este equipo no sirve.** Medido con
   `Keyla.exe --listen-test`: `Sonar - Chat` es el endpoint predeterminado tanto
   para `eConsole` como para `eMultimedia`, y en loopback **no entrega ni un
   sample**. `Sonar - Gaming` y el H510-PRO físico sí, y con los dos se saca la
@@ -473,13 +472,13 @@ Medido con `audio_probe`, no supuesto:
 
 ### Smart App Control
 
-Este equipo tiene Smart App Control activado
+Si el equipo tiene Smart App Control activado
 (`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy\VerifiedAndReputablePolicyState = 1`),
-que **bloquea cualquier ejecutable recién compilado**, incluido un hola-mundo.
-Sin desactivarlo no se puede ejecutar nada de lo que compilemos. Desactivarlo es
-irreversible sin reinstalar Windows, así que es decisión del usuario, no de
-Claude. Mientras esté activo, Claude puede compilar pero no ejecutar: la salida
-la aporta el usuario.
+**bloquea cualquier ejecutable recién compilado**, incluido un hola-mundo, y sin
+desactivarlo no se puede ejecutar nada de lo que se compile aquí. Desactivarlo
+es irreversible sin reinstalar Windows, así que es decisión de quien usa el
+equipo, no de Claude. Mientras esté activo, Claude puede compilar pero no
+ejecutar: la salida la aporta el usuario.
 
 ## Convenciones
 
